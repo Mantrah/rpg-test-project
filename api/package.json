@@ -1,0 +1,34 @@
+{
+  "name": "das-backend-api",
+  "version": "1.0.0",
+  "description": "DAS Belgium Legal Protection Insurance - REST API",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "insurance",
+    "legal-protection",
+    "das",
+    "ibm-i",
+    "rpg"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "morgan": "^1.10.0",
+    "helmet": "^7.1.0",
+    "odbc": "^2.4.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
