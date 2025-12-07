@@ -3,6 +3,8 @@ import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import BrokerList from './pages/BrokerList'
 import CreateBroker from './pages/CreateBroker'
+import CustomerList from './pages/CustomerList'
+import CreateCustomer from './pages/CreateCustomer'
 import ContractList from './pages/ContractList'
 import CreateContract from './pages/CreateContract'
 import DeclareClaim from './pages/DeclareClaim'
@@ -14,6 +16,8 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="brokers" element={<BrokerList />} />
         <Route path="brokers/create" element={<CreateBroker />} />
+        <Route path="customers" element={<CustomerList />} />
+        <Route path="customers/create" element={<CreateCustomer />} />
         <Route path="contracts" element={<ContractList />} />
         <Route path="contracts/create" element={<CreateContract />} />
         <Route path="contracts/:id/claim" element={<DeclareClaim />} />

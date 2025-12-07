@@ -7,6 +7,7 @@ const Layout = () => {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/brokers', label: 'Courtiers', icon: '🏢' },
+    { path: '/customers', label: 'Clients', icon: '👥' },
     { path: '/contracts', label: 'Contrats', icon: '📄' },
   ]
 

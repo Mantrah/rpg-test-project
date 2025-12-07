@@ -17,16 +17,16 @@ Impressionner DAS Belgium en démontrant :
 
 ```
 ┌──────────────────┐
-│  React Frontend  │  ← UI moderne (5 pages, 2 workflows)
+│  React Frontend  │  ← UI moderne (7 pages, 2 workflows)
 │  (Vite + React)  │     Tourne sur PC local
 └────────┬─────────┘
-         │ SSH Tunnel (port 8084)
+         │ SSH Tunnel (port 8085)
          ↓
 ┌──────────────────────────────────────────────────┐
 │                 IBM i (PUB400)                    │
 │  ┌──────────────────┐                             │
 │  │   Node.js API    │  ← REST API (Express)       │
-│  │ (Express + PASE) │     Port 8084               │
+│  │ (Express + PASE) │     Port 8085               │
 │  └────────┬─────────┘                             │
 │           │ iToolkit/XMLSERVICE                   │
 │           ↓                                       │
@@ -52,8 +52,7 @@ rpg-test-project/
 ├── docs/
 │   ├── DAS-BELGIUM-RESEARCH.md    # Recherche DAS (business, tech, interview)
 │   ├── implementation-plan.md     # Plan complet du projet
-│   ├── sql-sp-review.md          # Review SQL SPs (bug fix SP_IsCovered)
-│   └── program/                  # Docs 5 RPG programs
+│   └── program/                   # Docs 5 RPG programs
 │       ├── BROKRSRV.md
 │       ├── CUSTSRV.md
 │       ├── PRODSRV.md
@@ -61,21 +60,18 @@ rpg-test-project/
 │       └── CLAIMSRV.md
 ├── sql/
 │   ├── tables.sql                # DDL 7 tables
-│   ├── sp/                       # 15 Stored Procedures
-│   │   ├── SP_CreateBroker.sql
-│   │   ├── SP_CreateCustomer.sql
-│   │   ├── SP_CreateContract.sql
-│   │   ├── SP_CreateClaim.sql
-│   │   ├── SP_IsCovered.sql      # ⭐ Fixed critical bug
-│   │   └── ...
+│   ├── sp/                       # Stored Procedures (legacy)
+│   │   └── SP_CreateBroker.sql   # Exemple SP
 │   └── seed-data.sql             # Demo data (5 brokers, 10 clients, 8 contracts, 5 claims)
-├── src/qrpglesrc/                # 5 RPG Service Programs
+├── src/qrpglesrc/                # 6 RPG Service Programs
 │   ├── BROKRSRV.sqlrpgle         # Broker management
 │   ├── CUSTSRV.sqlrpgle          # Customer management (IND/BUS)
 │   ├── PRODSRV.sqlrpgle          # Product catalog
 │   ├── CONTSRV.sqlrpgle          # Contract lifecycle
 │   ├── CLAIMSRV.sqlrpgle         # Claim processing (79% AMI)
-│   └── ERRUTIL.rpgleinc          # Error handling
+│   ├── RPGWRAP.sqlrpgle          # Wrapper SQL pour iToolkit/XMLSERVICE
+│   ├── ERRUTIL.sqlrpgle          # Error handling service
+│   └── *_H.rpgle                 # Header files (prototypes)
 ├── api/                          # Node.js REST API (tourne sur IBM i PASE)
 │   ├── src/
 │   │   ├── config/
@@ -93,9 +89,12 @@ rpg-test-project/
 └── ui/                           # React Frontend
     ├── src/
     │   ├── pages/
-    │   │   ├── Dashboard.jsx     # KPIs + pie chart
-    │   │   ├── BrokerList.jsx
-    │   │   ├── ContractList.jsx
+    │   │   ├── Dashboard.jsx         # KPIs + pie chart
+    │   │   ├── BrokerList.jsx        # Liste courtiers + actions
+    │   │   ├── CreateBroker.jsx      # Création courtier
+    │   │   ├── CustomerList.jsx      # Liste clients (IND/BUS)
+    │   │   ├── CreateCustomer.jsx    # Création client (particulier/entreprise)
+    │   │   ├── ContractList.jsx      # Liste contrats
     │   │   ├── CreateContract.jsx    # ⭐ Workflow 1 (3-step wizard)
     │   │   └── DeclareClaim.jsx      # ⭐ Workflow 2 (real-time validation)
     │   ├── components/
@@ -144,7 +143,7 @@ npm install
 
 ```powershell
 # Tunnel SSH pour accéder à l'API depuis votre PC
-plink -ssh -P 2222 MRS@pub400.com -L 8084:localhost:8084 -N
+plink -ssh -P 2222 MRS@pub400.com -L 8085:localhost:8085 -N
 ```
 
 ### 4. Démarrer Backend API (sur IBM i)
@@ -155,14 +154,14 @@ cd /home/MRS/DAS/api
 npm start
 ```
 
-API disponible via tunnel sur `http://localhost:8084`
+API disponible via tunnel sur `http://localhost:8085`
 
 ### 5. Démarrer Frontend (local)
 
 ```bash
 cd ui
 npm install
-# Configurer VITE_API_URL=http://localhost:8084/api dans .env
+# Configurer VITE_API_URL=http://localhost:8085/api dans .env
 npm run dev
 ```
 
@@ -317,8 +316,9 @@ Data Access (DB2)
 - Accès **exclusivement via programmes RPG** (jamais SQL direct depuis Node.js)
 
 ### Connectivité
-- **SSH Tunnel** - Port 8084 forwarding pour accès API
+- **SSH Tunnel** - Port 8085 forwarding pour accès API
 - **iToolkit** - Appels programmes RPG via XMLSERVICE
+- **Note technique** : Les paramètres VARCHAR nécessitent `varying: 2` pour iToolkit (préfixe 2 octets)
 
 ## 📚 Documentation Complète
 
