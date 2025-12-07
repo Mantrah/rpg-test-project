@@ -91,63 +91,63 @@ dcl-c MIN_CLAIM_THRESHOLD 350;          // €350 minimum intervention
 //==============================================================
 
 // CRUD Operations
-dcl-pr CreateClaim packed(10:0) extproc('CLAIMSRV_CreateClaim');
+dcl-pr CLAIMSRV_CreateClaim packed(10:0);
     pClaim likeds(Claim_t) const;
 end-pr;
 
-dcl-pr GetClaim likeds(Claim_t) extproc('CLAIMSRV_GetClaim');
+dcl-pr CLAIMSRV_GetClaim likeds(Claim_t);
     pClaimId packed(10:0) const;
 end-pr;
 
-dcl-pr GetClaimByRef likeds(Claim_t) extproc('CLAIMSRV_GetClaimByRef');
+dcl-pr CLAIMSRV_GetClaimByRef likeds(Claim_t);
     pClaimReference char(20) const;
 end-pr;
 
-dcl-pr UpdateClaim ind extproc('CLAIMSRV_UpdateClaim');
+dcl-pr CLAIMSRV_UpdateClaim ind;
     pClaim likeds(Claim_t) const;
 end-pr;
 
-dcl-pr ListClaims int(10) extproc('CLAIMSRV_ListClaims');
+dcl-pr CLAIMSRV_ListClaims int(10);
     pFilter likeds(ClaimFilter_t) const;
 end-pr;
 
-dcl-pr GetContractClaims int(10) extproc('CLAIMSRV_GetContractClaims');
+dcl-pr CLAIMSRV_GetContractClaims int(10);
     pContId packed(10:0) const;
 end-pr;
 
 // Validation
-dcl-pr IsValidClaim ind extproc('CLAIMSRV_IsValidClaim');
+dcl-pr CLAIMSRV_IsValidClaim ind;
     pClaim likeds(Claim_t) const;
 end-pr;
 
 // Coverage Validation
-dcl-pr IsCovered ind extproc('CLAIMSRV_IsCovered');
+dcl-pr CLAIMSRV_IsCovered ind;
     pContId packed(10:0) const;
     pGuaranteeCode char(10) const;
 end-pr;
 
-dcl-pr IsInWaitingPeriod ind extproc('CLAIMSRV_IsInWaitingPeriod');
+dcl-pr CLAIMSRV_IsInWaitingPeriod ind;
     pContId packed(10:0) const;
     pGuaranteeCode char(10) const;
     pIncidentDate date const;
 end-pr;
 
 // Business Operations
-dcl-pr AssignLawyer ind extproc('CLAIMSRV_AssignLawyer');
+dcl-pr CLAIMSRV_AssignLawyer ind;
     pClaimId packed(10:0) const;
     pLawyerName varchar(100) const;
 end-pr;
 
-dcl-pr ResolveClaim ind extproc('CLAIMSRV_ResolveClaim');
+dcl-pr CLAIMSRV_ResolveClaim ind;
     pClaimId packed(10:0) const;
     pResolutionType char(3) const;
     pApprovedAmount packed(11:2) const;
 end-pr;
 
 // Reference Generation
-dcl-pr GenerateClaimRef char(20) extproc('CLAIMSRV_GenerateClaimRef');
+dcl-pr CLAIMSRV_GenerateClaimRef char(20);
 end-pr;
 
-dcl-pr GenerateFileRef char(20) extproc('CLAIMSRV_GenerateFileRef');
+dcl-pr CLAIMSRV_GenerateFileRef char(20);
     pClaimId packed(10:0) const;
 end-pr;

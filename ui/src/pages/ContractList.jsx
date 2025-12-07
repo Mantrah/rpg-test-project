@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { contractApi } from '../services/api'
@@ -8,12 +8,32 @@ import ErrorMessage from '../components/ErrorMessage'
 
 const ContractList = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('ACT')
+  const [deletingId, setDeletingId] = useState(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['contracts', statusFilter],
     queryFn: () => contractApi.getAll(statusFilter),
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => contractApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contracts'] })
+      setDeletingId(null)
+    },
+    onError: () => {
+      setDeletingId(null)
+    }
+  })
+
+  const handleDelete = (contract) => {
+    if (window.confirm(`Cloturer le contrat "${contract.CONT_REFERENCE}" ?`)) {
+      setDeletingId(contract.CONT_ID)
+      deleteMutation.mutate(contract.CONT_ID)
+    }
+  }
 
   const handleDeclareClaim = (contract) => {
     navigate(`/contracts/${contract.CONT_ID}/claim`, { state: { contract } })
@@ -176,14 +196,23 @@ const ContractList = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                       {contract.STATUS === 'ACT' && (
-                        <button
-                          onClick={() => handleDeclareClaim(contract)}
-                          className="btn-success text-sm"
-                        >
-                          Déclarer Sinistre
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handleDeclareClaim(contract)}
+                            className="btn-success text-sm"
+                          >
+                            Déclarer Sinistre
+                          </button>
+                          <button
+                            onClick={() => handleDelete(contract)}
+                            disabled={deletingId === contract.CONT_ID}
+                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50"
+                          >
+                            {deletingId === contract.CONT_ID ? '...' : 'Cloturer'}
+                          </button>
+                        </>
                       )}
                     </td>
                   </tr>

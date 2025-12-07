@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { customerApi, productApi, contractApi } from '../services/api'
+import { customerApi, productApi, contractApi, bceApi } from '../services/api'
 import Loading from '../components/Loading'
 import ErrorMessage from '../components/ErrorMessage'
 
@@ -18,6 +18,8 @@ const CreateContract = () => {
     firstName: '',
     lastName: '',
     companyName: '',
+    vatNumber: '',
+    naceCode: '',
     email: '',
     phone: '',
     street: '',
@@ -39,6 +41,8 @@ const CreateContract = () => {
   })
 
   const [errors, setErrors] = useState({})
+  const [bceSearching, setBceSearching] = useState(false)
+  const [bceError, setBceError] = useState(null)
 
   // Fetch customers and products
   const { data: customers } = useQuery({
@@ -73,6 +77,40 @@ const CreateContract = () => {
       alert(`❌ Erreur: ${error.message}`)
     },
   })
+
+  // BCE search function
+  const handleBceSearch = async () => {
+    if (!formData.vatNumber || formData.vatNumber.length < 10) {
+      setBceError('Entrez un numéro de TVA valide (ex: BE0123456789)')
+      return
+    }
+
+    setBceSearching(true)
+    setBceError(null)
+
+    try {
+      const result = await bceApi.searchByVat(formData.vatNumber)
+      const company = result.data
+
+      // Auto-fill form with BCE data
+      setFormData(prev => ({
+        ...prev,
+        companyName: company.companyName || prev.companyName,
+        vatNumber: company.vatNumber || prev.vatNumber,
+        naceCode: company.naceCode || prev.naceCode,
+        street: company.address?.street || prev.street,
+        houseNbr: company.address?.houseNbr || prev.houseNbr,
+        boxNbr: company.address?.boxNbr || prev.boxNbr,
+        postalCode: company.address?.postalCode || prev.postalCode,
+        city: company.address?.city || prev.city,
+        countryCode: company.address?.countryCode || 'BE',
+      }))
+    } catch (error) {
+      setBceError(error.message || 'Entreprise non trouvée dans la BCE')
+    } finally {
+      setBceSearching(false)
+    }
+  }
 
   // Auto-calculate premium when product or vehicles change
   useEffect(() => {
@@ -143,6 +181,8 @@ const CreateContract = () => {
         firstName: formData.firstName || null,
         lastName: formData.lastName || null,
         companyName: formData.companyName || null,
+        vatNumber: formData.vatNumber || null,
+        naceCode: formData.naceCode || null,
         email: formData.email,
         phone: formData.phone || null,
         street: formData.street,
@@ -302,15 +342,66 @@ const CreateContract = () => {
                   </div>
                 </div>
               ) : (
-                <div>
-                  <label className="label">Nom Société *</label>
-                  <input
-                    type="text"
-                    value={formData.companyName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
-                    className="input-field"
-                  />
-                  {errors.companyName && <p className="text-red-600 text-sm mt-1">{errors.companyName}</p>}
+                <div className="space-y-4">
+                  {/* BCE Search */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <label className="label text-blue-900">Recherche BCE (Banque-Carrefour des Entreprises)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="N° TVA (ex: BE0123456789)"
+                        value={formData.vatNumber}
+                        onChange={(e) => setFormData(prev => ({ ...prev, vatNumber: e.target.value.toUpperCase() }))}
+                        className="input-field flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleBceSearch}
+                        disabled={bceSearching}
+                        className="btn-primary whitespace-nowrap"
+                      >
+                        {bceSearching ? 'Recherche...' : 'Rechercher'}
+                      </button>
+                    </div>
+                    {bceError && <p className="text-red-600 text-sm mt-2">{bceError}</p>}
+                    <p className="text-xs text-blue-700 mt-2">
+                      Entrez le numéro de TVA pour auto-remplir les données de l'entreprise
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="label">Nom Société *</label>
+                    <input
+                      type="text"
+                      value={formData.companyName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
+                      className="input-field"
+                    />
+                    {errors.companyName && <p className="text-red-600 text-sm mt-1">{errors.companyName}</p>}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">N° TVA</label>
+                      <input
+                        type="text"
+                        value={formData.vatNumber}
+                        onChange={(e) => setFormData(prev => ({ ...prev, vatNumber: e.target.value.toUpperCase() }))}
+                        className="input-field bg-gray-50"
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Code NACE</label>
+                      <input
+                        type="text"
+                        value={formData.naceCode}
+                        onChange={(e) => setFormData(prev => ({ ...prev, naceCode: e.target.value }))}
+                        className="input-field bg-gray-50"
+                        placeholder="ex: 62010"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

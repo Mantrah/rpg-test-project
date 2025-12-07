@@ -18,33 +18,32 @@ Impressionner DAS Belgium en démontrant :
 ```
 ┌──────────────────┐
 │  React Frontend  │  ← UI moderne (5 pages, 2 workflows)
-│  (Vite + React)  │
+│  (Vite + React)  │     Tourne sur PC local
 └────────┬─────────┘
-         │ HTTP/REST
+         │ SSH Tunnel (port 8084)
          ↓
-┌──────────────────┐
-│   Node.js API    │  ← 37 endpoints REST
-│  (Express+ODBC)  │
-└────────┬─────────┘
-         │ ODBC
-         ↓
-┌──────────────────┐
-│   SQL Stored     │  ← 15 SPs wrappers
-│   Procedures     │
-└────────┬─────────┘
-         │ CALL
-         ↓
-┌──────────────────┐
-│   RPG ILE        │  ← 5 Service Programs (business logic)
-│  Service Programs│     BROKRSRV, CUSTSRV, PRODSRV, CONTSRV, CLAIMSRV
-└────────┬─────────┘
-         │
-         ↓
-┌──────────────────┐
-│   DB2 for i      │  ← 7 tables (IBM i V7R5)
-│   Database       │
-└──────────────────┘
+┌──────────────────────────────────────────────────┐
+│                 IBM i (PUB400)                    │
+│  ┌──────────────────┐                             │
+│  │   Node.js API    │  ← REST API (Express)       │
+│  │ (Express + PASE) │     Port 8084               │
+│  └────────┬─────────┘                             │
+│           │ iToolkit/XMLSERVICE                   │
+│           ↓                                       │
+│  ┌──────────────────┐     ┌──────────────────┐    │
+│  │   RPGWRAP.PGM    │────▶│  RPG Services    │    │
+│  │  (SQL Wrapper)   │     │  BROKRSRV,etc    │    │
+│  └──────────────────┘     └────────┬─────────┘    │
+│                                    │              │
+│                                    ↓              │
+│                           ┌──────────────────┐    │
+│                           │   DB2 for i      │    │
+│                           │   (MRS1 schema)  │    │
+│                           └──────────────────┘    │
+└───────────────────────────────────────────────────┘
 ```
+
+**Architecture** : Node.js appelle les programmes RPG via iToolkit/XMLSERVICE. RPGWRAP.PGM sert de wrapper SQL pour les services RPG (BROKRSRV, CUSTSRV, PRODSRV, CONTSRV, CLAIMSRV). **Aucun accès SQL direct depuis Node.js** - toutes les requêtes DB2 passent par les service programs RPG.
 
 ## 📦 Structure du Projet
 
@@ -77,12 +76,13 @@ rpg-test-project/
 │   ├── CONTSRV.sqlrpgle          # Contract lifecycle
 │   ├── CLAIMSRV.sqlrpgle         # Claim processing (79% AMI)
 │   └── ERRUTIL.rpgleinc          # Error handling
-├── api/                          # Node.js REST API
+├── api/                          # Node.js REST API (tourne sur IBM i PASE)
 │   ├── src/
 │   │   ├── config/
-│   │   │   ├── database.js       # ODBC connection pool
+│   │   │   ├── database.js       # iToolkit/XMLSERVICE config
+│   │   │   ├── rpgConnector.js   # RPG service program calls
 │   │   │   └── constants.js      # Business rules
-│   │   ├── services/             # 6 services
+│   │   ├── services/             # Deprecated (now using RPG)
 │   │   ├── controllers/          # 6 controllers
 │   │   ├── routes/               # 6 route files
 │   │   ├── middleware/
@@ -106,52 +106,63 @@ rpg-test-project/
     └── README.md
 ```
 
-## 🚀 Quick Start (3 étapes)
+## 🚀 Quick Start
 
 ### Pré-requis
-- IBM i V7R5 (ou PUB400.com)
-- Node.js 18+
-- ODBC Driver IBM i Access
+- IBM i V7R5 (ou PUB400.com) avec Node.js 18+ installé
+- Accès SSH à l'IBM i
+- PuTTY (Windows) pour tunnel SSH
 
 ### 1. Setup Database (IBM i)
 
 ```bash
-# 1. Créer les tables
+# Connexion SSH à l'IBM i
+ssh MRS@pub400.com -p 2222
+
+# Créer les tables (schema MRS1)
 db2 -f sql/tables.sql
 
-# 2. Créer les Stored Procedures
-db2 -f sql/sp/SP_CreateBroker.sql
-db2 -f sql/sp/SP_CreateCustomer.sql
-# ... (15 SPs au total)
-
-# 3. Insérer les données de démo
+# Insérer les données de démo
 db2 -f sql/seed-data.sql
 ```
 
-**Alternative**: Compiler les 5 RPG Service Programs si vous voulez utiliser directement RPG :
+### 2. Déployer API sur IBM i
+
 ```bash
-CRTBNDRPG PGM(DASBE/BROKRSRV) SRCFILE(DASBE/QRPGLESRC)
-# ... (5 programs)
+# Créer le dossier de l'API
+mkdir -p /home/MRS/DAS/api
+
+# Copier les fichiers (depuis Windows avec pscp)
+pscp -r api/* MRS@pub400.com:/home/MRS/DAS/api/
+
+# Sur IBM i : installer les dépendances
+cd /home/MRS/DAS/api
+npm install
 ```
 
-### 2. Démarrer Backend API
+### 3. Créer le Tunnel SSH (Windows)
+
+```powershell
+# Tunnel SSH pour accéder à l'API depuis votre PC
+plink -ssh -P 2222 MRS@pub400.com -L 8084:localhost:8084 -N
+```
+
+### 4. Démarrer Backend API (sur IBM i)
 
 ```bash
-cd api
-npm install
-cp .env.example .env
-# Éditer .env avec vos credentials IBM i
+# Sur IBM i
+cd /home/MRS/DAS/api
 npm start
 ```
 
-API disponible sur `http://localhost:3000`
+API disponible via tunnel sur `http://localhost:8084`
 
-### 3. Démarrer Frontend
+### 5. Démarrer Frontend (local)
 
 ```bash
 cd ui
 npm install
-cp .env.example .env
+# Configurer VITE_API_URL=http://localhost:8084/api dans .env
 npm run dev
 ```
 
@@ -285,14 +296,13 @@ Data Access (DB2)
 
 ## 📊 Stack Technique Complet
 
-### Backend
-- **RPG ILE** - Business logic (5 service programs)
-- **SQL/DB2** - Data layer (7 tables, 15 SPs)
-- **Node.js 18** - REST API layer
+### Backend (sur IBM i PASE)
+- **Node.js 18** - REST API running in PASE
 - **Express 4** - Web framework
-- **ODBC 2** - IBM i connectivity
+- **iToolkit/XMLSERVICE** - Appels aux programmes RPG via XML
+- **RPG ILE** - 5 Service programs + RPGWRAP (toute la logique métier)
 
-### Frontend
+### Frontend (local)
 - **React 18** - UI library
 - **Vite 5** - Build tool (ultra-rapide)
 - **TanStack Query 5** - Data fetching
@@ -300,10 +310,15 @@ Data Access (DB2)
 - **Recharts 2** - Charts (pie)
 
 ### Database (IBM i V7R5 / DB2)
+- Schema: MRS1
 - 7 tables: BROKER, CUSTOMER, PRODUCT, GUARANTEE, CONTRACT, CLAIM
-- 15 Stored Procedures (wrappers RPG)
 - IDENTITY columns pour IDs auto-increment
 - Foreign keys + indexes
+- Accès **exclusivement via programmes RPG** (jamais SQL direct depuis Node.js)
+
+### Connectivité
+- **SSH Tunnel** - Port 8084 forwarding pour accès API
+- **iToolkit** - Appels programmes RPG via XMLSERVICE
 
 ## 📚 Documentation Complète
 

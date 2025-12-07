@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -32,6 +32,7 @@ export const brokerApi = {
   getById: (id) => api.get(`/brokers/${id}`),
   getByCode: (code) => api.get(`/brokers/code/${code}`),
   create: (data) => api.post('/brokers', data),
+  delete: (id) => api.delete(`/brokers/${id}`),
 };
 
 // Customers
@@ -61,6 +62,7 @@ export const contractApi = {
   getClaims: (id) => api.get(`/contracts/${id}/claims`),
   create: (data) => api.post('/contracts', data),
   calculatePremium: (data) => api.post('/contracts/calculate', data),
+  delete: (id) => api.delete(`/contracts/${id}`),
 };
 
 // Claims
@@ -72,6 +74,13 @@ export const claimApi = {
   checkCoverage: (data) => api.post('/claims/check-coverage', data),
   validate: (data) => api.post('/claims/validate', data),
   create: (data) => api.post('/claims', data),
+};
+
+// BCE (Banque-Carrefour des Entreprises)
+export const bceApi = {
+  searchByVat: (vatNumber) => api.get(`/bce/search/${encodeURIComponent(vatNumber)}`),
+  validateVat: (vatNumber) => api.get(`/bce/validate/${encodeURIComponent(vatNumber)}`),
+  getMock: (vatNumber) => api.get(`/bce/mock/${encodeURIComponent(vatNumber)}`),
 };
 
 export default api;

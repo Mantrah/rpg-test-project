@@ -1,38 +1,42 @@
 /**
  * Contract Controller
  * HTTP request handlers for contract endpoints
+ * ALL data access goes through RPG via rpgConnector
  */
 
-const contractService = require('../services/contractService');
+const rpgConnector = require('../config/rpgConnector');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { STATUS, PAYMENT_FREQUENCY } = require('../config/constants');
+const { PAYMENT_FREQUENCY } = require('../config/constants');
+
+// Valid contract status values
+const VALID_CONTRACT_STATUS = ['ACT', 'SUS', 'CLS', 'EXP'];
 
 /**
- * Create new contract
+ * Create new contract via RPG
  * POST /api/contracts
  */
 const createContract = asyncHandler(async (req, res) => {
   const contractData = req.body;
 
   // Validate required fields
-  if (!contractData.brokerId || !contractData.custId || !contractData.productCode) {
+  if (!contractData.brokerId || !contractData.custId || !contractData.productId) {
     return res.status(400).json({
       success: false,
       error: {
         code: 'VAL002',
-        message: 'Broker ID, Customer ID, and Product Code are required.'
+        message: 'Broker ID, Customer ID, and Product ID are required.'
       }
     });
   }
 
   // Validate dates
-  if (!contractData.startDate || !contractData.endDate) {
+  if (!contractData.startDate) {
     return res.status(400).json({
       success: false,
       error: {
         code: 'VAL002',
-        message: 'Start date and end date are required.'
+        message: 'Start date is required.'
       }
     });
   }
@@ -49,7 +53,7 @@ const createContract = asyncHandler(async (req, res) => {
   }
 
   // Validate vehicles count
-  if (contractData.vehiclesCount < 0 || contractData.vehiclesCount > 99) {
+  if (contractData.vehiclesCount !== undefined && (contractData.vehiclesCount < 0 || contractData.vehiclesCount > 99)) {
     return res.status(400).json({
       success: false,
       error: {
@@ -59,19 +63,19 @@ const createContract = asyncHandler(async (req, res) => {
     });
   }
 
-  const contract = await contractService.createContract(contractData);
+  const contract = await rpgConnector.createContract(contractData);
   res.status(201).json(success(contract, 'Contract created successfully'));
 });
 
 /**
- * Get all contracts
+ * Get all contracts via RPG
  * GET /api/contracts?status=ACT
  */
 const getAllContracts = asyncHandler(async (req, res) => {
   const { status } = req.query;
 
   // Validate status if provided
-  if (status && !STATUS[status]) {
+  if (status && !VALID_CONTRACT_STATUS.includes(status)) {
     return res.status(400).json({
       success: false,
       error: {
@@ -81,12 +85,12 @@ const getAllContracts = asyncHandler(async (req, res) => {
     });
   }
 
-  const contracts = await contractService.listContracts(status || null);
+  const contracts = await rpgConnector.listContracts(status || '');
   res.json(success(contracts));
 });
 
 /**
- * Get contract by ID
+ * Get contract by ID via RPG
  * GET /api/contracts/:id
  */
 const getContractById = asyncHandler(async (req, res) => {
@@ -102,12 +106,12 @@ const getContractById = asyncHandler(async (req, res) => {
     });
   }
 
-  const contract = await contractService.getContractById(contId);
+  const contract = await rpgConnector.getContractById(contId);
   res.json(success(contract));
 });
 
 /**
- * Get contract by reference
+ * Get contract by reference via RPG
  * GET /api/contracts/reference/:reference
  */
 const getContractByReference = asyncHandler(async (req, res) => {
@@ -123,12 +127,19 @@ const getContractByReference = asyncHandler(async (req, res) => {
     });
   }
 
-  const contract = await contractService.getContractByReference(reference);
+  // Use list then find by reference
+  const contracts = await rpgConnector.listContracts('');
+  const contract = contracts.find(c => c.CONT_REFERENCE === reference);
+  if (!contract) {
+    const error = new Error('Contract not found');
+    error.statusCode = 404;
+    throw error;
+  }
   res.json(success(contract));
 });
 
 /**
- * Get broker's contracts
+ * Get broker's contracts via RPG
  * GET /api/contracts/broker/:brokerId
  */
 const getBrokerContracts = asyncHandler(async (req, res) => {
@@ -144,13 +155,16 @@ const getBrokerContracts = asyncHandler(async (req, res) => {
     });
   }
 
-  const contracts = await contractService.getBrokerContracts(brokerId);
-  res.json(success(contracts));
+  // Use list then filter by broker
+  const contracts = await rpgConnector.listContracts('');
+  const brokerContracts = contracts.filter(c => c.BROKER_ID === brokerId);
+  res.json(success(brokerContracts));
 });
 
 /**
- * Get contract claims
+ * Get contract claims via RPG
  * GET /api/contracts/:id/claims
+ * TODO: Add WRAP_ListClaims to return claims for a contract
  */
 const getContractClaims = asyncHandler(async (req, res) => {
   const contId = parseInt(req.params.id, 10);
@@ -165,12 +179,13 @@ const getContractClaims = asyncHandler(async (req, res) => {
     });
   }
 
-  const claims = await contractService.getContractClaims(contId);
-  res.json(success(claims));
+  // TODO: Implement WRAP_ListClaimsByContract in RPG
+  // For now, return empty array
+  res.json(success([]));
 });
 
 /**
- * Calculate premium
+ * Calculate premium via RPG
  * POST /api/contracts/calculate
  * Body: { productCode, vehiclesCount, payFrequency }
  */
@@ -210,13 +225,31 @@ const calculatePremium = asyncHandler(async (req, res) => {
     });
   }
 
-  const premiumData = await contractService.calculatePremium(
+  const premiumData = await rpgConnector.calculatePremium(
     productCode.toUpperCase(),
     vehiclesCount,
     payFrequency
   );
 
   res.json(success(premiumData, 'Premium calculated successfully'));
+});
+
+/**
+ * DELETE /api/contracts/:id
+ * Soft delete a contract via RPG (sets status to CLS)
+ */
+const deleteContract = asyncHandler(async (req, res) => {
+  const contId = parseInt(req.params.id, 10);
+
+  if (isNaN(contId)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'VAL001', message: 'Invalid contract ID' }
+    });
+  }
+
+  await rpgConnector.deleteContract(contId);
+  res.json(success({ contId }, 'Contract deleted successfully'));
 });
 
 module.exports = {
@@ -226,5 +259,6 @@ module.exports = {
   getContractByReference,
   getBrokerContracts,
   getContractClaims,
-  calculatePremium
+  calculatePremium,
+  deleteContract
 };

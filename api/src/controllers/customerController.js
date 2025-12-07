@@ -1,15 +1,17 @@
 /**
  * Customer Controller
  * HTTP request handlers for customer endpoints
+ * Uses RPG backend via iToolkit for business operations
  */
 
-const customerService = require('../services/customerService');
+const rpgConnector = require('../config/rpgConnector');
+const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { CUSTOMER_TYPE, STATUS } = require('../config/constants');
 
 /**
- * Create new customer
+ * Create new customer via RPG
  * POST /api/customers
  */
 const createCustomer = asyncHandler(async (req, res) => {
@@ -49,12 +51,12 @@ const createCustomer = asyncHandler(async (req, res) => {
     }
   }
 
-  const customer = await customerService.createCustomer(customerData);
+  const customer = await rpgConnector.createCustomer(customerData);
   res.status(201).json(success(customer, 'Customer created successfully'));
 });
 
 /**
- * Get all customers
+ * Get all customers - SQL read-only
  * GET /api/customers?status=ACT
  */
 const getAllCustomers = asyncHandler(async (req, res) => {
@@ -71,12 +73,19 @@ const getAllCustomers = asyncHandler(async (req, res) => {
     });
   }
 
-  const customers = await customerService.listCustomers(status || null);
+  let sql = 'SELECT * FROM CUSTOMER';
+  const params = [];
+  if (status) {
+    sql += ' WHERE STATUS = ?';
+    params.push(status);
+  }
+  sql += ' ORDER BY LAST_NAME, FIRST_NAME';
+  const customers = await query(sql, params);
   res.json(success(customers));
 });
 
 /**
- * Get customer by ID
+ * Get customer by ID via RPG
  * GET /api/customers/:id
  */
 const getCustomerById = asyncHandler(async (req, res) => {
@@ -92,12 +101,12 @@ const getCustomerById = asyncHandler(async (req, res) => {
     });
   }
 
-  const customer = await customerService.getCustomerById(custId);
+  const customer = await rpgConnector.getCustomerById(custId);
   res.json(success(customer));
 });
 
 /**
- * Get customer by email
+ * Get customer by email - SQL read-only
  * GET /api/customers/email/:email
  */
 const getCustomerByEmail = asyncHandler(async (req, res) => {
@@ -113,12 +122,18 @@ const getCustomerByEmail = asyncHandler(async (req, res) => {
     });
   }
 
-  const customer = await customerService.getCustomerByEmail(email);
-  res.json(success(customer));
+  const sql = 'SELECT * FROM CUSTOMER WHERE EMAIL = ?';
+  const result = await query(sql, [email]);
+  if (!result || result.length === 0) {
+    const error = new Error('Customer not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  res.json(success(result[0]));
 });
 
 /**
- * Get customer contracts
+ * Get customer contracts - SQL read-only
  * GET /api/customers/:id/contracts
  */
 const getCustomerContracts = asyncHandler(async (req, res) => {
@@ -134,7 +149,8 @@ const getCustomerContracts = asyncHandler(async (req, res) => {
     });
   }
 
-  const contracts = await customerService.getCustomerContracts(custId);
+  const sql = 'SELECT * FROM CONTRACT WHERE CUST_ID = ? ORDER BY START_DATE DESC';
+  const contracts = await query(sql, [custId]);
   res.json(success(contracts));
 });
 

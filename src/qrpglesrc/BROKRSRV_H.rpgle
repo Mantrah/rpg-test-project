@@ -48,35 +48,40 @@ end-ds;
 //==============================================================
 
 // CRUD Operations
-dcl-pr CreateBroker packed(10:0) extproc('BROKRSRV_CreateBroker');
+dcl-pr BROKRSRV_CreateBroker packed(10:0);
     pBroker likeds(Broker_t) const;
 end-pr;
 
-dcl-pr GetBroker likeds(Broker_t) extproc('BROKRSRV_GetBroker');
+dcl-pr BROKRSRV_GetBroker likeds(Broker_t);
     pBrokerId packed(10:0) const;
 end-pr;
 
-dcl-pr GetBrokerByCode likeds(Broker_t) extproc('BROKRSRV_GetBrokerByCode');
+dcl-pr BROKRSRV_GetBrokerByCode likeds(Broker_t);
     pBrokerCode char(10) const;
 end-pr;
 
-dcl-pr UpdateBroker ind extproc('BROKRSRV_UpdateBroker');
+dcl-pr BROKRSRV_UpdateBroker ind;
     pBroker likeds(Broker_t) const;
 end-pr;
 
-dcl-pr DeleteBroker ind extproc('BROKRSRV_DeleteBroker');
+dcl-pr BROKRSRV_DeleteBroker ind;
     pBrokerId packed(10:0) const;
 end-pr;
 
-dcl-pr ListBrokers int(10) extproc('BROKRSRV_ListBrokers');
+dcl-pr BROKRSRV_ListBrokers int(10);
     pFilter likeds(BrokerFilter_t) const;
 end-pr;
 
 // Validation
-dcl-pr IsValidBroker ind extproc('BROKRSRV_IsValidBroker');
+dcl-pr BROKRSRV_IsValidBroker ind;
     pBroker likeds(Broker_t) const;
 end-pr;
 
-dcl-pr IsValidFsmaNumber ind extproc('BROKRSRV_IsValidFsmaNumber');
+dcl-pr BROKRSRV_IsValidFsmaNumber ind;
     pFsmaNumber char(10) const;
+end-pr;
+
+dcl-pr BROKRSRV_ListBrokersJson int(10);
+    pStatusFilter   char(3) const;
+    pJsonData       varchar(32000);
 end-pr;

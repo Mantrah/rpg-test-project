@@ -1,38 +1,40 @@
 /**
  * Claim Controller
  * HTTP request handlers for claim endpoints
+ * Uses RPG backend via iToolkit for business operations
  */
 
-const claimService = require('../services/claimService');
+const rpgConnector = require('../config/rpgConnector');
+const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { STATUS, BUSINESS_RULES } = require('../config/constants');
 
 /**
- * Create new claim
+ * Create new claim via RPG
  * POST /api/claims
  */
 const createClaim = asyncHandler(async (req, res) => {
   const claimData = req.body;
 
   // Validate required fields
-  if (!claimData.contId || !claimData.guaranteeCode || !claimData.circumstanceCode) {
+  if (!claimData.contId || !claimData.guaranteeCode) {
     return res.status(400).json({
       success: false,
       error: {
         code: 'VAL002',
-        message: 'Contract ID, Guarantee Code, and Circumstance Code are required.'
+        message: 'Contract ID and Guarantee Code are required.'
       }
     });
   }
 
   // Validate dates
-  if (!claimData.declarationDate || !claimData.incidentDate) {
+  if (!claimData.incidentDate) {
     return res.status(400).json({
       success: false,
       error: {
         code: 'VAL002',
-        message: 'Declaration date and incident date are required.'
+        message: 'Incident date is required.'
       }
     });
   }
@@ -48,12 +50,12 @@ const createClaim = asyncHandler(async (req, res) => {
     });
   }
 
-  const claim = await claimService.createClaim(claimData);
+  const claim = await rpgConnector.createClaim(claimData);
   res.status(201).json(success(claim, 'Claim created successfully'));
 });
 
 /**
- * Get all claims
+ * Get all claims - SQL read-only
  * GET /api/claims?status=NEW
  */
 const getAllClaims = asyncHandler(async (req, res) => {
@@ -70,12 +72,19 @@ const getAllClaims = asyncHandler(async (req, res) => {
     });
   }
 
-  const claims = await claimService.listClaims(status || null);
+  let sql = 'SELECT * FROM CLAIM';
+  const params = [];
+  if (status) {
+    sql += ' WHERE STATUS = ?';
+    params.push(status);
+  }
+  sql += ' ORDER BY DECLARATION_DATE DESC';
+  const claims = await query(sql, params);
   res.json(success(claims));
 });
 
 /**
- * Get claim by ID
+ * Get claim by ID via RPG
  * GET /api/claims/:id
  */
 const getClaimById = asyncHandler(async (req, res) => {
@@ -91,12 +100,12 @@ const getClaimById = asyncHandler(async (req, res) => {
     });
   }
 
-  const claim = await claimService.getClaimById(claimId);
+  const claim = await rpgConnector.getClaimById(claimId);
   res.json(success(claim));
 });
 
 /**
- * Get claim by reference
+ * Get claim by reference - SQL read-only
  * GET /api/claims/reference/:reference
  */
 const getClaimByReference = asyncHandler(async (req, res) => {
@@ -112,12 +121,18 @@ const getClaimByReference = asyncHandler(async (req, res) => {
     });
   }
 
-  const claim = await claimService.getClaimByReference(reference);
-  res.json(success(claim));
+  const sql = 'SELECT * FROM CLAIM WHERE CLAIM_REFERENCE = ?';
+  const result = await query(sql, [reference]);
+  if (!result || result.length === 0) {
+    const error = new Error('Claim not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  res.json(success(result[0]));
 });
 
 /**
- * Check coverage for contract and guarantee
+ * Check coverage for contract and guarantee - SQL read-only
  * POST /api/claims/check-coverage
  * Body: { contId, guaranteeCode }
  */
@@ -135,12 +150,19 @@ const checkCoverage = asyncHandler(async (req, res) => {
     });
   }
 
-  const coverage = await claimService.checkCoverage(contId, guaranteeCode);
-  res.json(success(coverage));
+  const sql = `
+    SELECT 1 AS IS_COVERED
+    FROM CONTRACT C
+    JOIN PRODUCT_GUARANTEE PG ON C.PRODUCT_ID = PG.PRODUCT_ID
+    WHERE C.CONT_ID = ? AND PG.GUARANTEE_CODE = ? AND C.STATUS = 'ACT'
+  `;
+  const result = await query(sql, [contId, guaranteeCode]);
+  const isCovered = result && result.length > 0;
+  res.json(success({ isCovered, contId, guaranteeCode }));
 });
 
 /**
- * Validate claim before creation
+ * Validate claim before creation via RPG
  * POST /api/claims/validate
  * Body: { contId, guaranteeCode, claimedAmount, incidentDate }
  */
@@ -168,16 +190,20 @@ const validateClaim = asyncHandler(async (req, res) => {
     });
   }
 
-  const validation = await claimService.validateClaim(claimData);
+  const validation = await rpgConnector.validateClaim(
+    claimData.contId,
+    claimData.guaranteeCode,
+    claimData.claimedAmount,
+    claimData.incidentDate
+  );
   res.json(success(validation));
 });
 
 /**
- * Get claims statistics
+ * Get claims statistics - SQL read-only
  * GET /api/claims/stats
  */
 const getClaimsStats = asyncHandler(async (req, res) => {
-  // This will be used for dashboard
   const sql = `
     SELECT
       COUNT(*) AS TOTAL_CLAIMS,
@@ -195,9 +221,7 @@ const getClaimsStats = asyncHandler(async (req, res) => {
     FROM CLAIM
   `;
 
-  const { query } = require('../config/database');
   const result = await query(sql);
-
   const stats = result[0];
 
   // Calculate amicable resolution rate (target: 79%)

@@ -12,3 +12,17 @@ Thumbs.db
 # Temporary files
 *.tmp
 *~
+
+# FTP deployment scripts (keep useful ones, ignore temp)
+ftp-*.txt
+!ftp-restart-api.txt
+!ftp-deploy-restart.txt
+!ftp-rebuild-srvpgm.txt
+
+# Backup/debug files
+*-current.js
+*-remote.js
+*-new.js
+
+# Dependencies
+node_modules/

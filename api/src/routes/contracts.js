@@ -59,4 +59,12 @@ router.get('/:id', contractController.getContractById);
  */
 router.get('/:id/claims', contractController.getContractClaims);
 
+/**
+ * @route   DELETE /api/contracts/:id
+ * @desc    Soft delete a contract (set status to CLS)
+ * @access  Public (for MVP - add auth later)
+ * @param   id - Contract ID
+ */
+router.delete('/:id', contractController.deleteContract);
+
 module.exports = router;

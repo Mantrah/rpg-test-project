@@ -65,43 +65,43 @@ dcl-c CIVIL_WIDOWED 'WID';
 //==============================================================
 
 // CRUD Operations
-dcl-pr CreateCustomer packed(10:0) extproc('CUSTSRV_CreateCustomer');
+dcl-pr CUSTSRV_CreateCustomer packed(10:0);
     pCustomer likeds(Customer_t) const;
 end-pr;
 
-dcl-pr GetCustomer likeds(Customer_t) extproc('CUSTSRV_GetCustomer');
+dcl-pr CUSTSRV_GetCustomer likeds(Customer_t);
     pCustId packed(10:0) const;
 end-pr;
 
-dcl-pr UpdateCustomer ind extproc('CUSTSRV_UpdateCustomer');
+dcl-pr CUSTSRV_UpdateCustomer ind;
     pCustomer likeds(Customer_t) const;
 end-pr;
 
-dcl-pr DeleteCustomer ind extproc('CUSTSRV_DeleteCustomer');
+dcl-pr CUSTSRV_DeleteCustomer ind;
     pCustId packed(10:0) const;
 end-pr;
 
-dcl-pr ListCustomers int(10) extproc('CUSTSRV_ListCustomers');
+dcl-pr CUSTSRV_ListCustomers int(10);
     pFilter likeds(CustomerFilter_t) const;
 end-pr;
 
 // Validation
-dcl-pr IsValidCustomer ind extproc('CUSTSRV_IsValidCustomer');
+dcl-pr CUSTSRV_IsValidCustomer ind;
     pCustomer likeds(Customer_t) const;
 end-pr;
 
-dcl-pr IsValidEmail ind extproc('CUSTSRV_IsValidEmail');
+dcl-pr CUSTSRV_IsValidEmail ind;
     pEmail varchar(100) const;
 end-pr;
 
-dcl-pr IsValidVatNumber ind extproc('CUSTSRV_IsValidVatNumber');
+dcl-pr CUSTSRV_IsValidVatNumber ind;
     pVatNumber char(12) const;
 end-pr;
 
-dcl-pr IsValidNationalId ind extproc('CUSTSRV_IsValidNationalId');
+dcl-pr CUSTSRV_IsValidNationalId ind;
     pNationalId char(15) const;
 end-pr;
 
-dcl-pr IsValidPostalCode ind extproc('CUSTSRV_IsValidPostalCode');
+dcl-pr CUSTSRV_IsValidPostalCode ind;
     pPostalCode char(7) const;
 end-pr;

@@ -21,6 +21,8 @@ const productRoutes = require('./routes/products');
 const contractRoutes = require('./routes/contracts');
 const claimRoutes = require('./routes/claims');
 const dashboardRoutes = require('./routes/dashboard');
+const bceRoutes = require('./routes/bce');
+const debugRoutes = require('./routes/debug');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -52,6 +54,8 @@ app.use(`${API_PREFIX}/products`, productRoutes);
 app.use(`${API_PREFIX}/contracts`, contractRoutes);
 app.use(`${API_PREFIX}/claims`, claimRoutes);
 app.use(`${API_PREFIX}/dashboard`, dashboardRoutes);
+app.use(`${API_PREFIX}/bce`, bceRoutes);
+app.use(`${API_PREFIX}/debug`, debugRoutes);
 
 // Error handlers (must be last)
 app.use(notFoundHandler);
@@ -84,6 +88,7 @@ const startServer = async () => {
       console.log(`  - ${API_PREFIX}/contracts`);
       console.log(`  - ${API_PREFIX}/claims`);
       console.log(`  - ${API_PREFIX}/dashboard`);
+      console.log(`  - ${API_PREFIX}/bce`);
       console.log('');
     });
   } catch (error) {

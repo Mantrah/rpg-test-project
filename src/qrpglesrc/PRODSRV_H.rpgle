@@ -70,37 +70,37 @@ dcl-c GUAR_ADMIN 'ADMIN';
 //==============================================================
 
 // Product Operations (mostly read-only)
-dcl-pr GetProduct likeds(Product_t) extproc('PRODSRV_GetProduct');
+dcl-pr PRODSRV_GetProduct likeds(Product_t);
     pProductId packed(10:0) const;
 end-pr;
 
-dcl-pr GetProductByCode likeds(Product_t) extproc('PRODSRV_GetProductByCode');
+dcl-pr PRODSRV_GetProductByCode likeds(Product_t);
     pProductCode char(10) const;
 end-pr;
 
-dcl-pr ListProducts int(10) extproc('PRODSRV_ListProducts');
+dcl-pr PRODSRV_ListProducts int(10);
     pProductType char(3) const options(*nopass);
 end-pr;
 
-dcl-pr GetProductGuarantees int(10) extproc('PRODSRV_GetProductGuarantees');
+dcl-pr PRODSRV_GetProductGuarantees int(10);
     pProductId packed(10:0) const;
 end-pr;
 
-dcl-pr CalculateBasePremium packed(9:2) extproc('PRODSRV_CalculateBasePremium');
+dcl-pr PRODSRV_CalculateBasePremium packed(9:2);
     pProductCode char(10) const;
     pVehiclesCount packed(2:0) const;
 end-pr;
 
-dcl-pr IsProductAvailable ind extproc('PRODSRV_IsProductAvailable');
+dcl-pr PRODSRV_IsProductAvailable ind;
     pProductCode char(10) const;
 end-pr;
 
-dcl-pr HasGuarantee ind extproc('PRODSRV_HasGuarantee');
+dcl-pr PRODSRV_HasGuarantee ind;
     pProductId packed(10:0) const;
     pGuaranteeCode char(10) const;
 end-pr;
 
-dcl-pr GetGuaranteeWaitingPeriod packed(2:0) extproc('PRODSRV_GetGuaranteeWaitingPeriod');
+dcl-pr PRODSRV_GetGuaranteeWaitingPeriod packed(2:0);
     pProductId packed(10:0) const;
     pGuaranteeCode char(10) const;
 end-pr;

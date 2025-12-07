@@ -15,9 +15,13 @@
 
 ctl-opt nomain option(*srcstmt:*nodebugio);
 
-/copy qrpglesrc/CLAIMSRV_H
-/copy qrpglesrc/CONTSRV_H
-/copy qrpglesrc/PRODSRV_H
+// SQL Options - COMMIT(*NONE) required for PUB400 (no journaling)
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+/copy MRS1/QRPGLESRC,CLAIMSRV_H
+/copy MRS1/QRPGLESRC,ERRUTIL_H
+/copy MRS1/QRPGLESRC,CONTSRV_H
+/copy MRS1/QRPGLESRC,PRODSRV_H
 
 //==============================================================
 // CreateClaim : Insert new claim
@@ -39,19 +43,19 @@ dcl-proc CLAIMSRV_CreateClaim export;
 
     monitor;
         // Validation
-        if not IsValidClaim(claim);
+        if not CLAIMSRV_IsValidClaim(claim);
             return 0;
         endif;
 
         // Check coverage
-        if not IsCovered(claim.contId: claim.guaranteeCode);
+        if not CLAIMSRV_IsCovered(claim.contId: claim.guaranteeCode);
             ERRUTIL_addErrorCode('BUS005');
             return 0;
         endif;
 
         // Check waiting period
         if claim.incidentDate <> *loval;
-            if IsInWaitingPeriod(claim.contId: claim.guaranteeCode: claim.incidentDate);
+            if CLAIMSRV_IsInWaitingPeriod(claim.contId: claim.guaranteeCode: claim.incidentDate);
                 ERRUTIL_addErrorCode('BUS004');
                 return 0;
             endif;
@@ -65,7 +69,7 @@ dcl-proc CLAIMSRV_CreateClaim export;
 
         // Generate references if not provided
         if claim.claimReference = '';
-            claim.claimReference = GenerateClaimRef();
+            claim.claimReference = CLAIMSRV_GenerateClaimRef();
         endif;
 
         // Business logic
@@ -202,7 +206,7 @@ dcl-proc CLAIMSRV_UpdateClaim export;
 
     monitor;
         // Validation
-        if not IsValidClaim(pClaim);
+        if not CLAIMSRV_IsValidClaim(pClaim);
             return *off;
         endif;
 
@@ -531,10 +535,10 @@ dcl-proc CLAIMSRV_GenerateClaimRef export;
             FROM CLAIM;
 
     on-error;
-        sequence = %int(%timestamp());
+        sequence = 1;
     endmon;
 
-    reference = 'SIN-' + year + '-' + %editc(sequence: 'X');
+    reference = 'SIN-' + year + '-' + %trim(%editc(sequence: 'Z'));
 
     return reference;
 end-proc;

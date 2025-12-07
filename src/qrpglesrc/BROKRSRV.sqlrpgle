@@ -10,7 +10,11 @@
 
 ctl-opt nomain option(*srcstmt:*nodebugio);
 
-/copy qrpglesrc/BROKRSRV_H
+// SQL Options - COMMIT(*NONE) required for PUB400 (no journaling)
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+/copy MRS1/QRPGLESRC,BROKRSRV_H
+/copy MRS1/QRPGLESRC,ERRUTIL_H
 
 //==============================================================
 // CreateBroker : Insert new broker
@@ -24,13 +28,15 @@ dcl-proc BROKRSRV_CreateBroker export;
     end-pi;
 
     dcl-s newBrokerId packed(10:0) inz(0);
+    dcl-s saveSqlCode int(10);
+    dcl-s saveSqlState char(5);
 
     // Initialization
     ERRUTIL_init();
 
     monitor;
         // Validation
-        if not IsValidBroker(pBroker);
+        if not BROKRSRV_IsValidBroker(pBroker);
             return 0;
         endif;
 
@@ -48,15 +54,13 @@ dcl-proc BROKRSRV_CreateBroker export;
                 :pBroker.contactName, 'ACT'
             );
 
+        // Check INSERT result
         if sqlcode = 0;
+            // Get the new broker ID using MAX (more reliable than IDENTITY_VAL_LOCAL)
             exec sql
-                SELECT IDENTITY_VAL_LOCAL() INTO :newBrokerId FROM SYSIBM.SYSDUMMY1;
+                SELECT MAX(BROKER_ID) INTO :newBrokerId FROM BROKER;
         else;
-            if sqlcode = -803;
-                ERRUTIL_addErrorCode('DB002');
-            else;
-                ERRUTIL_addErrorCode('DB004');
-            endif;
+            ERRUTIL_addErrorCode('DB004');
         endif;
 
     on-error;
@@ -166,7 +170,7 @@ dcl-proc BROKRSRV_UpdateBroker export;
 
     monitor;
         // Validation
-        if not IsValidBroker(pBroker);
+        if not BROKRSRV_IsValidBroker(pBroker);
             return *off;
         endif;
 
@@ -288,7 +292,7 @@ dcl-proc BROKRSRV_IsValidBroker export;
     endif;
 
     // Validation - FSMA number
-    if pBroker.fsmaNumber <> '' and not IsValidFsmaNumber(pBroker.fsmaNumber);
+    if pBroker.fsmaNumber <> '' and not BROKRSRV_IsValidFsmaNumber(pBroker.fsmaNumber);
         return *off;
     endif;
 
@@ -322,4 +326,98 @@ dcl-proc BROKRSRV_IsValidFsmaNumber export;
     endif;
 
     return *on;
+end-proc;
+
+//==============================================================
+// ListBrokersJson : List brokers as JSON array
+//
+//  Returns: Count of brokers
+//
+//==============================================================
+dcl-proc BROKRSRV_ListBrokersJson export;
+    dcl-pi *n int(10);
+        pStatusFilter   char(3) const;
+        pJsonData       varchar(32000);
+    end-pi;
+
+    dcl-s jsonRow varchar(500);
+    dcl-s brokerId packed(10:0);
+    dcl-s brokerCode char(10);
+    dcl-s companyName varchar(100);
+    dcl-s vatNumber char(12);
+    dcl-s fsmaNumber char(10);
+    dcl-s street varchar(30);
+    dcl-s houseNbr char(5);
+    dcl-s postalCode char(7);
+    dcl-s city varchar(24);
+    dcl-s phone varchar(20);
+    dcl-s email varchar(100);
+    dcl-s contactName varchar(100);
+    dcl-s brokerStatus char(3);
+    dcl-s resultCount int(10) inz(0);
+    dcl-s firstRow ind inz(*on);
+    dcl-s statusFilter char(3);
+
+    exec sql
+        DECLARE C_LISTBROKERS CURSOR FOR
+        SELECT BROKER_ID, BROKER_CODE, COMPANY_NAME,
+               COALESCE(VAT_NUMBER, ''), COALESCE(FSMA_NUMBER, ''),
+               COALESCE(STREET, ''), COALESCE(HOUSE_NBR, ''),
+               COALESCE(POSTAL_CODE, ''), COALESCE(CITY, ''),
+               COALESCE(PHONE, ''), COALESCE(EMAIL, ''),
+               COALESCE(CONTACT_NAME, ''), STATUS
+        FROM BROKER
+        WHERE :statusFilter = '' OR STATUS = :statusFilter
+        ORDER BY COMPANY_NAME;
+
+    monitor;
+        statusFilter = %trim(pStatusFilter);
+        pJsonData = '[';
+
+        exec sql OPEN C_LISTBROKERS;
+
+        exec sql
+            FETCH C_LISTBROKERS INTO :brokerId, :brokerCode, :companyName,
+                :vatNumber, :fsmaNumber, :street, :houseNbr,
+                :postalCode, :city, :phone, :email, :contactName, :brokerStatus;
+
+        dow sqlcode = 0;
+            if not firstRow;
+                pJsonData = %trim(pJsonData) + ',';
+            endif;
+            firstRow = *off;
+
+            jsonRow = '{"BROKER_ID":' + %char(brokerId) +
+                ',"BROKER_CODE":"' + %trim(brokerCode) +
+                '","COMPANY_NAME":"' + %trim(companyName) +
+                '","VAT_NUMBER":"' + %trim(vatNumber) +
+                '","FSMA_NUMBER":"' + %trim(fsmaNumber) +
+                '","STREET":"' + %trim(street) +
+                '","HOUSE_NBR":"' + %trim(houseNbr) +
+                '","POSTAL_CODE":"' + %trim(postalCode) +
+                '","CITY":"' + %trim(city) +
+                '","PHONE":"' + %trim(phone) +
+                '","EMAIL":"' + %trim(email) +
+                '","CONTACT_NAME":"' + %trim(contactName) +
+                '","STATUS":"' + %trim(brokerStatus) + '"}';
+
+            pJsonData = %trim(pJsonData) + jsonRow;
+            resultCount += 1;
+
+            exec sql
+                FETCH C_LISTBROKERS INTO :brokerId, :brokerCode, :companyName,
+                    :vatNumber, :fsmaNumber, :street, :houseNbr,
+                    :postalCode, :city, :phone, :email, :contactName, :brokerStatus;
+        enddo;
+
+        exec sql CLOSE C_LISTBROKERS;
+
+        pJsonData = %trim(pJsonData) + ']';
+
+    on-error;
+        pJsonData = '[]';
+        ERRUTIL_addExecutionError();
+    endmon;
+
+    return resultCount;
 end-proc;

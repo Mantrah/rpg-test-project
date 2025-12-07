@@ -70,8 +70,7 @@ const Layout = () => {
             <p>DAS Belgium Backend Demo • RPG ILE Service Programs on IBM i V7R5</p>
             <p className="mt-1">
               <span className="text-green-600 font-medium">✓ TELEBIB2 Compliant</span> •
-              <span className="text-green-600 font-medium ml-2">✓ 79% Amicable Resolution</span> •
-              <span className="text-green-600 font-medium ml-2">✓ €350 Threshold</span>
+              <span className="text-green-600 font-medium ml-2">✓ 79% Amicable Resolution</span>
             </p>
           </div>
         </div>

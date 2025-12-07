@@ -12,8 +12,12 @@
 
 ctl-opt nomain option(*srcstmt:*nodebugio);
 
-/copy qrpglesrc/CONTSRV_H
-/copy qrpglesrc/PRODSRV_H
+// SQL Options - COMMIT(*NONE) required for PUB400 (no journaling)
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+/copy MRS1/QRPGLESRC,CONTSRV_H
+/copy MRS1/QRPGLESRC,ERRUTIL_H
+/copy MRS1/QRPGLESRC,PRODSRV_H
 
 //==============================================================
 // CreateContract : Insert new contract
@@ -35,13 +39,13 @@ dcl-proc CONTSRV_CreateContract export;
 
     monitor;
         // Validation
-        if not IsValidContract(contract);
+        if not CONTSRV_IsValidContract(contract);
             return 0;
         endif;
 
         // Generate reference if not provided
         if contract.contReference = '';
-            contract.contReference = GenerateContractRef(contract.brokerId);
+            contract.contReference = CONTSRV_GenerateContractRef(contract.brokerId);
         endif;
 
         // Set default end date (1 year) if not provided
@@ -173,7 +177,7 @@ dcl-proc CONTSRV_UpdateContract export;
 
     monitor;
         // Validation
-        if not IsValidContract(pContract);
+        if not CONTSRV_IsValidContract(pContract);
             return *off;
         endif;
 
@@ -361,11 +365,13 @@ dcl-proc CONTSRV_IsValidContract export;
         return *off;
     endif;
 
-    // Validation - Payment frequency
+    // Validation - Payment frequency (M=Monthly, Q=Quarterly, A=Annual)
     if pContract.payFrequency <> 'M' and
        pContract.payFrequency <> 'Q' and
-       pContract.payFrequency <> 'A';
-        pContract.payFrequency = 'A';  // Default to annual
+       pContract.payFrequency <> 'A' and
+       pContract.payFrequency <> '';
+        ERRUTIL_addErrorCode('VAL008');
+        return *off;
     endif;
 
     return *on;
@@ -419,7 +425,7 @@ dcl-proc CONTSRV_CanRenewContract export;
     dcl-ds contract likeds(Contract_t);
     dcl-s daysToExpiry int(10);
 
-    contract = GetContract(pContId);
+    contract = CONTSRV_GetContract(pContId);
 
     // Business logic - Check if contract is active and near expiry
     if contract.status <> 'ACT';
@@ -456,21 +462,21 @@ dcl-proc CONTSRV_RenewContract export;
     dcl-ds newContract likeds(Contract_t);
 
     // Business logic
-    if not CanRenewContract(pContId);
+    if not CONTSRV_CanRenewContract(pContId);
         return 0;
     endif;
 
-    oldContract = GetContract(pContId);
+    oldContract = CONTSRV_GetContract(pContId);
 
     // Create new contract based on old
     newContract = oldContract;
     newContract.contId = 0;
-    newContract.contReference = GenerateContractRef(oldContract.brokerId);
+    newContract.contReference = CONTSRV_GenerateContractRef(oldContract.brokerId);
     newContract.startDate = oldContract.endDate;
     newContract.endDate = newContract.startDate + %years(1);
     newContract.status = 'ACT';
 
-    return CreateContract(newContract);
+    return CONTSRV_CreateContract(newContract);
 end-proc;
 
 //==============================================================
@@ -524,12 +530,10 @@ dcl-proc CONTSRV_GenerateContractRef export;
     dcl-s reference char(20);
     dcl-s sequence packed(10:0);
     dcl-s year char(4);
-    dcl-s broker char(5);
 
     // Business logic - Generate unique reference
     // Format: DAS-YYYY-BBBBB-NNNNNN
     year = %char(%subdt(%date(): *years));
-    broker = %editc(pBrokerId: 'X');
 
     monitor;
         exec sql
@@ -537,11 +541,12 @@ dcl-proc CONTSRV_GenerateContractRef export;
             FROM CONTRACT;
 
     on-error;
-        sequence = %timestamp();
+        sequence = 1;
     endmon;
 
-    reference = 'DAS-' + year + '-' + %subst(broker: 6: 5) + '-' +
-                %editc(sequence: 'X');
+    reference = 'DAS-' + year + '-' +
+                %trim(%editc(pBrokerId: 'Z')) + '-' +
+                %trim(%editc(sequence: 'Z'));
 
     return reference;
 end-proc;

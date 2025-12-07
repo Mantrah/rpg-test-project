@@ -1,24 +1,27 @@
 /**
  * Product Controller
  * HTTP request handlers for product endpoints
+ * Uses RPG backend via iToolkit for business operations
  */
 
-const productService = require('../services/productService');
+const rpgConnector = require('../config/rpgConnector');
+const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { PAYMENT_FREQUENCY } = require('../config/constants');
 
 /**
- * Get all products
+ * Get all products - SQL read-only
  * GET /api/products
  */
 const getAllProducts = asyncHandler(async (req, res) => {
-  const products = await productService.getAllProducts();
+  const sql = 'SELECT * FROM PRODUCT WHERE STATUS = \'ACT\' ORDER BY PRODUCT_NAME';
+  const products = await query(sql);
   res.json(success(products));
 });
 
 /**
- * Get product by ID
+ * Get product by ID via RPG
  * GET /api/products/:id
  */
 const getProductById = asyncHandler(async (req, res) => {
@@ -34,12 +37,12 @@ const getProductById = asyncHandler(async (req, res) => {
     });
   }
 
-  const product = await productService.getProductById(productId);
+  const product = await rpgConnector.getProductById(productId);
   res.json(success(product));
 });
 
 /**
- * Get product by code
+ * Get product by code - SQL read-only
  * GET /api/products/code/:code
  */
 const getProductByCode = asyncHandler(async (req, res) => {
@@ -55,12 +58,18 @@ const getProductByCode = asyncHandler(async (req, res) => {
     });
   }
 
-  const product = await productService.getProductByCode(code.toUpperCase());
-  res.json(success(product));
+  const sql = 'SELECT * FROM PRODUCT WHERE PRODUCT_CODE = ?';
+  const result = await query(sql, [code.toUpperCase()]);
+  if (!result || result.length === 0) {
+    const error = new Error('Product not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  res.json(success(result[0]));
 });
 
 /**
- * Get product guarantees
+ * Get product guarantees - SQL read-only
  * GET /api/products/:id/guarantees
  */
 const getProductGuarantees = asyncHandler(async (req, res) => {
@@ -76,12 +85,19 @@ const getProductGuarantees = asyncHandler(async (req, res) => {
     });
   }
 
-  const guarantees = await productService.getProductGuarantees(productId);
+  const sql = `
+    SELECT PG.*, G.GUARANTEE_NAME, G.DESCRIPTION
+    FROM PRODUCT_GUARANTEE PG
+    JOIN GUARANTEE G ON PG.GUARANTEE_CODE = G.GUARANTEE_CODE
+    WHERE PG.PRODUCT_ID = ?
+    ORDER BY G.GUARANTEE_NAME
+  `;
+  const guarantees = await query(sql, [productId]);
   res.json(success(guarantees));
 });
 
 /**
- * Calculate premium
+ * Calculate premium via RPG
  * POST /api/products/calculate
  * Body: { productCode, vehiclesCount, payFrequency }
  */
@@ -121,7 +137,7 @@ const calculatePremium = asyncHandler(async (req, res) => {
     });
   }
 
-  const premiumData = await productService.calculateFullPremium(
+  const premiumData = await rpgConnector.calculatePremium(
     productCode.toUpperCase(),
     vehiclesCount,
     payFrequency

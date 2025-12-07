@@ -9,7 +9,11 @@
 
 ctl-opt nomain option(*srcstmt:*nodebugio);
 
-/copy qrpglesrc/PRODSRV_H
+// SQL Options - COMMIT(*NONE) required for PUB400 (no journaling)
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+/copy MRS1/QRPGLESRC,PRODSRV_H
+/copy MRS1/QRPGLESRC,ERRUTIL_H
 
 //==============================================================
 // GetProduct : Retrieve product by ID

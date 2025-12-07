@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { brokerApi } from '../services/api'
 import Loading from '../components/Loading'
@@ -7,12 +7,32 @@ import ErrorMessage from '../components/ErrorMessage'
 
 const BrokerList = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState('ACT')
+  const [deletingId, setDeletingId] = useState(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['brokers', statusFilter],
     queryFn: () => brokerApi.getAll(statusFilter),
   })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => brokerApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brokers'] })
+      setDeletingId(null)
+    },
+    onError: () => {
+      setDeletingId(null)
+    }
+  })
+
+  const handleDelete = (broker) => {
+    if (window.confirm(`Supprimer le courtier "${broker.COMPANY_NAME}" ?`)) {
+      setDeletingId(broker.BROKER_ID)
+      deleteMutation.mutate(broker.BROKER_ID)
+    }
+  }
 
   const handleCreateContract = (broker) => {
     navigate('/contracts/create', { state: { broker } })
@@ -33,17 +53,25 @@ const BrokerList = () => {
             Liste des courtiers partenaires DAS Belgium
           </p>
         </div>
-        <div>
-          <label className="label">Statut</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input-field"
+        <div className="flex items-end space-x-4">
+          <div>
+            <label className="label">Statut</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Tous</option>
+              <option value="ACT">Actif</option>
+              <option value="SUS">Suspendu</option>
+            </select>
+          </div>
+          <button
+            onClick={() => navigate('/brokers/create')}
+            className="btn-success"
           >
-            <option value="">Tous</option>
-            <option value="ACT">Actif</option>
-            <option value="SUS">Suspendu</option>
-          </select>
+            + Nouveau Courtier
+          </button>
         </div>
       </div>
 
@@ -134,7 +162,7 @@ const BrokerList = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                       {broker.STATUS === 'ACT' && (
                         <button
                           onClick={() => handleCreateContract(broker)}
@@ -143,6 +171,13 @@ const BrokerList = () => {
                           Créer Contrat
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(broker)}
+                        disabled={deletingId === broker.BROKER_ID}
+                        className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50"
+                      >
+                        {deletingId === broker.BROKER_ID ? '...' : 'Supprimer'}
+                      </button>
                     </td>
                   </tr>
                 ))

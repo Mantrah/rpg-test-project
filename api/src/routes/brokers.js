@@ -39,4 +39,12 @@ router.get('/:id(\\d+)', brokerController.getBroker);
  */
 router.get('/code/:code', brokerController.getBrokerByCode);
 
+/**
+ * @route   DELETE /api/brokers/:id
+ * @desc    Soft delete a broker (set status to INA)
+ * @access  Public (for MVP - add auth later)
+ * @param   id - Broker ID
+ */
+router.delete('/:id(\\d+)', brokerController.deleteBroker);
+
 module.exports = router;

@@ -2,12 +2,28 @@
 
 RPG ILE test project for IBM i V7R5.
 
+## Architecture
+
+**IMPORTANT: All database access MUST go through RPG service programs.**
+
+```
+React UI → Node.js API → iToolkit/XMLSERVICE → RPG Service Programs → DB2
+```
+
+- **Node.js controllers**: HTTP handling, validation, call rpgConnector only
+- **rpgConnector.js**: Calls RPG via iToolkit XMLSERVICE
+- **RPG Service Programs**: ALL SQL/database operations (BROKRSRV, CONTSRV, CUSTSRV, etc.)
+- **DB2**: Tables in library MRS1
+
+**NO direct SQL queries from Node.js to DB2.** All data access goes through RPG.
+
 ## Project Structure
 
-- `src/qrpglesrc/` - RPG source files
+- `src/qrpglesrc/` - RPG source files (service programs)
+- `api/` - Node.js Express API (calls RPG only)
+- `ui/` - React frontend
 - `sql/` - SQL DDL scripts (tables, views)
 - `docs/` - Program documentation
-- `refactor/` - Refactoring documentation and output
 
 ## Skills
 

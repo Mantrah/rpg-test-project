@@ -11,7 +11,15 @@
 //   ERRUTIL_addExecutionError(); // In ON-ERROR blocks
 // ============================================================
 
-ctl-opt nomain;
+ctl-opt nomain option(*srcstmt:*nodebugio);
+
+// SQL Options - COMMIT(*NONE) required for PUB400
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+// Job info variables
+dcl-s gJobName char(10);
+dcl-s gJobUser char(10);
+dcl-s gJobNumber char(6);
 
 //==============================================================
 // Constants
@@ -233,4 +241,71 @@ dcl-proc getErrorMessage;
         other;
             return 'Unknown error: ' + %trim(pErrorCode);
     endsl;
+end-proc;
+
+//==============================================================
+// ERRUTIL_getJobInfo : Get current job identifier
+//
+//  Returns: Job identifier (number/user/name)
+//
+//==============================================================
+dcl-proc ERRUTIL_getJobInfo export;
+    dcl-pi *n varchar(50) end-pi;
+
+    dcl-s jobInfo varchar(50);
+
+    // Get job info via SQL
+    exec sql
+        SELECT JOB_NAME, JOB_USER, JOB_NUMBER
+        INTO :gJobName, :gJobUser, :gJobNumber
+        FROM TABLE(QSYS2.GET_JOB_INFO('*')) LIMIT 1;
+
+    if sqlcode = 0;
+        jobInfo = %trim(gJobNumber) + '/' +
+                  %trim(gJobUser) + '/' +
+                  %trim(gJobName);
+    else;
+        // Fallback: use PSDS if SQL fails
+        jobInfo = 'UNKNOWN';
+    endif;
+
+    return jobInfo;
+end-proc;
+
+//==============================================================
+// ERRUTIL_addSqlError : Add SQL error with job info
+//
+//  Returns: Nothing
+//
+//==============================================================
+dcl-proc ERRUTIL_addSqlError export;
+    dcl-pi *n;
+        pSqlCode int(10) const;
+        pSqlState char(5) const;
+        pContext varchar(50) const;
+    end-pi;
+
+    dcl-s errMsg varchar(256);
+    dcl-s jobInfo varchar(50);
+
+    // Validation
+    if ErrorStack.count >= MAX_ERRORS;
+        return;
+    endif;
+
+    // Get job info
+    jobInfo = ERRUTIL_getJobInfo();
+
+    // Build error message with job info
+    errMsg = 'SQLCODE=' + %char(pSqlCode) +
+             ' SQLSTATE=' + pSqlState +
+             ' Context=' + %trim(pContext) +
+             ' Job=' + jobInfo;
+
+    // Business logic
+    ErrorStack.count += 1;
+    ErrorStack.errors(ErrorStack.count).errorCode = 'SQL' + %char(pSqlCode);
+    ErrorStack.errors(ErrorStack.count).errorMsg = errMsg;
+    ErrorStack.errors(ErrorStack.count).errorType = 'S';
+    ErrorStack.errors(ErrorStack.count).timestamp = %timestamp();
 end-proc;

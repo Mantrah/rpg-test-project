@@ -1,7 +1,7 @@
 /**
- * Broker Controller
- * Handles HTTP requests for broker endpoints
- * ALL data access goes through RPG via rpgConnector
+ * Broker Controller - RPG Version
+ * Handles HTTP requests for broker endpoints using RPG backend
+ * Calls RPG service program DASSRV via iToolkit
  */
 
 const rpgConnector = require('../config/rpgConnector');
@@ -19,11 +19,12 @@ const createBroker = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/brokers
- * List all brokers via RPG
+ * List all brokers - still uses SQL (list operations are read-only)
  */
 const listBrokers = asyncHandler(async (req, res) => {
+  const brokerService = require('../services/brokerService');
   const { status } = req.query;
-  const brokers = await rpgConnector.listBrokers(status || '');
+  const brokers = await brokerService.listBrokers(status);
   res.json(success(brokers));
 });
 
@@ -39,43 +40,18 @@ const getBroker = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/brokers/code/:code
- * Get broker by code via RPG
+ * Get broker by code - uses SQL (read-only)
  */
 const getBrokerByCode = asyncHandler(async (req, res) => {
+  const brokerService = require('../services/brokerService');
   const brokerCode = req.params.code;
-  // Use list with filter, then find by code
-  const brokers = await rpgConnector.listBrokers('');
-  const broker = brokers.find(b => b.BROKER_CODE === brokerCode);
-  if (!broker) {
-    const error = new Error('Broker not found');
-    error.statusCode = 404;
-    throw error;
-  }
+  const broker = await brokerService.getBrokerByCode(brokerCode);
   res.json(success(broker));
-});
-
-/**
- * DELETE /api/brokers/:id
- * Soft delete a broker via RPG (sets status to INA)
- */
-const deleteBroker = asyncHandler(async (req, res) => {
-  const brokerId = parseInt(req.params.id);
-
-  if (isNaN(brokerId)) {
-    return res.status(400).json({
-      success: false,
-      error: { code: 'VAL001', message: 'Invalid broker ID' }
-    });
-  }
-
-  await rpgConnector.deleteBroker(brokerId);
-  res.json(success({ brokerId }, 'Broker deleted successfully'));
 });
 
 module.exports = {
   createBroker,
   listBrokers,
   getBroker,
-  getBrokerByCode,
-  deleteBroker
+  getBrokerByCode
 };

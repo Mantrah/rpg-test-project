@@ -68,62 +68,62 @@ dcl-c PAY_ANNUAL 'A';
 //==============================================================
 
 // CRUD Operations
-dcl-pr CreateContract packed(10:0) extproc('CONTSRV_CreateContract');
+dcl-pr CONTSRV_CreateContract packed(10:0);
     pContract likeds(Contract_t) const;
 end-pr;
 
-dcl-pr GetContract likeds(Contract_t) extproc('CONTSRV_GetContract');
+dcl-pr CONTSRV_GetContract likeds(Contract_t);
     pContId packed(10:0) const;
 end-pr;
 
-dcl-pr GetContractByRef likeds(Contract_t) extproc('CONTSRV_GetContractByRef');
+dcl-pr CONTSRV_GetContractByRef likeds(Contract_t);
     pContReference char(20) const;
 end-pr;
 
-dcl-pr UpdateContract ind extproc('CONTSRV_UpdateContract');
+dcl-pr CONTSRV_UpdateContract ind;
     pContract likeds(Contract_t) const;
 end-pr;
 
-dcl-pr CancelContract ind extproc('CONTSRV_CancelContract');
+dcl-pr CONTSRV_CancelContract ind;
     pContId packed(10:0) const;
 end-pr;
 
-dcl-pr ListContracts int(10) extproc('CONTSRV_ListContracts');
+dcl-pr CONTSRV_ListContracts int(10);
     pFilter likeds(ContractFilter_t) const;
 end-pr;
 
-dcl-pr GetCustomerContracts int(10) extproc('CONTSRV_GetCustomerContracts');
+dcl-pr CONTSRV_GetCustomerContracts int(10);
     pCustId packed(10:0) const;
 end-pr;
 
-dcl-pr GetBrokerContracts int(10) extproc('CONTSRV_GetBrokerContracts');
+dcl-pr CONTSRV_GetBrokerContracts int(10);
     pBrokerId packed(10:0) const;
 end-pr;
 
 // Validation
-dcl-pr IsValidContract ind extproc('CONTSRV_IsValidContract');
+dcl-pr CONTSRV_IsValidContract ind;
     pContract likeds(Contract_t) const;
 end-pr;
 
 // Business Logic
-dcl-pr CalculatePremium packed(9:2) extproc('CONTSRV_CalculatePremium');
+dcl-pr CONTSRV_CalculatePremium packed(9:2);
     pProductCode char(10) const;
     pVehiclesCount packed(2:0) const;
     pPayFrequency char(1) const;
 end-pr;
 
-dcl-pr CanRenewContract ind extproc('CONTSRV_CanRenewContract');
+dcl-pr CONTSRV_CanRenewContract ind;
     pContId packed(10:0) const;
 end-pr;
 
-dcl-pr RenewContract packed(10:0) extproc('CONTSRV_RenewContract');
+dcl-pr CONTSRV_RenewContract packed(10:0);
     pContId packed(10:0) const;
 end-pr;
 
-dcl-pr IsContractActive ind extproc('CONTSRV_IsContractActive');
+dcl-pr CONTSRV_IsContractActive ind;
     pContId packed(10:0) const;
 end-pr;
 
-dcl-pr GenerateContractRef char(20) extproc('CONTSRV_GenerateContractRef');
+dcl-pr CONTSRV_GenerateContractRef char(20);
     pBrokerId packed(10:0) const;
 end-pr;

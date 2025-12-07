@@ -10,7 +10,11 @@
 
 ctl-opt nomain option(*srcstmt:*nodebugio);
 
-/copy qrpglesrc/CUSTSRV_H
+// SQL Options - COMMIT(*NONE) required for PUB400 (no journaling)
+exec sql SET OPTION COMMIT = *NONE, CLOSQLCSR = *ENDMOD;
+
+/copy MRS1/QRPGLESRC,CUSTSRV_H
+/copy MRS1/QRPGLESRC,ERRUTIL_H
 
 //==============================================================
 // CreateCustomer : Insert new customer
@@ -30,11 +34,11 @@ dcl-proc CUSTSRV_CreateCustomer export;
 
     monitor;
         // Validation
-        if not IsValidCustomer(pCustomer);
+        if not CUSTSRV_IsValidCustomer(pCustomer);
             return 0;
         endif;
 
-        // Business logic
+        // Business logic - Utiliser paramètre qualified directement
         exec sql
             INSERT INTO CUSTOMER (
                 CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
@@ -78,13 +82,13 @@ dcl-proc CUSTSRV_GetCustomer export;
     dcl-ds customer likeds(Customer_t) inz;
 
     monitor;
-        // Business logic
+        // Business logic - Select directly into structure
         exec sql
             SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
                    CIVIL_STATUS, BIRTH_DATE, COMPANY_NAME, VAT_NUMBER,
                    NACE_CODE, STREET, HOUSE_NBR, BOX_NBR, POSTAL_CODE,
-                   CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE, STATUS,
-                   CREATED_AT, UPDATED_AT
+                   CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE,
+                   STATUS, CREATED_AT, UPDATED_AT
             INTO :customer
             FROM CUSTOMER
             WHERE CUST_ID = :pCustId;
@@ -119,39 +123,83 @@ dcl-proc CUSTSRV_UpdateCustomer export;
 
     dcl-s success ind inz(*off);
 
+    // Standalone variables for SQL
+    dcl-s custId packed(10:0);
+    dcl-s custType char(3);
+    dcl-s firstName varchar(50);
+    dcl-s lastName varchar(50);
+    dcl-s nationalId char(15);
+    dcl-s civilStatus char(3);
+    dcl-s birthDate date;
+    dcl-s companyName varchar(100);
+    dcl-s vatNumber char(12);
+    dcl-s naceCode char(5);
+    dcl-s street varchar(30);
+    dcl-s houseNbr char(5);
+    dcl-s boxNbr char(4);
+    dcl-s postalCode char(7);
+    dcl-s city varchar(24);
+    dcl-s countryCode char(3);
+    dcl-s phone varchar(20);
+    dcl-s email varchar(100);
+    dcl-s language char(2);
+    dcl-s status char(3);
+
     // Initialization
     ERRUTIL_init();
 
     monitor;
         // Validation
-        if not IsValidCustomer(pCustomer);
+        if not CUSTSRV_IsValidCustomer(pCustomer);
             return *off;
         endif;
+
+        // Copy to standalone variables
+        custId = pCustomer.custId;
+        custType = pCustomer.custType;
+        firstName = pCustomer.firstName;
+        lastName = pCustomer.lastName;
+        nationalId = pCustomer.nationalId;
+        civilStatus = pCustomer.civilStatus;
+        birthDate = pCustomer.birthDate;
+        companyName = pCustomer.companyName;
+        vatNumber = pCustomer.vatNumber;
+        naceCode = pCustomer.naceCode;
+        street = pCustomer.street;
+        houseNbr = pCustomer.houseNbr;
+        boxNbr = pCustomer.boxNbr;
+        postalCode = pCustomer.postalCode;
+        city = pCustomer.city;
+        countryCode = pCustomer.countryCode;
+        phone = pCustomer.phone;
+        email = pCustomer.email;
+        language = pCustomer.language;
+        status = pCustomer.status;
 
         // Business logic
         exec sql
             UPDATE CUSTOMER SET
-                CUST_TYPE = :pCustomer.custType,
-                FIRST_NAME = :pCustomer.firstName,
-                LAST_NAME = :pCustomer.lastName,
-                NATIONAL_ID = :pCustomer.nationalId,
-                CIVIL_STATUS = :pCustomer.civilStatus,
-                BIRTH_DATE = :pCustomer.birthDate,
-                COMPANY_NAME = :pCustomer.companyName,
-                VAT_NUMBER = :pCustomer.vatNumber,
-                NACE_CODE = :pCustomer.naceCode,
-                STREET = :pCustomer.street,
-                HOUSE_NBR = :pCustomer.houseNbr,
-                BOX_NBR = :pCustomer.boxNbr,
-                POSTAL_CODE = :pCustomer.postalCode,
-                CITY = :pCustomer.city,
-                COUNTRY_CODE = :pCustomer.countryCode,
-                PHONE = :pCustomer.phone,
-                EMAIL = :pCustomer.email,
-                LANGUAGE = :pCustomer.language,
-                STATUS = :pCustomer.status,
+                CUST_TYPE = :custType,
+                FIRST_NAME = :firstName,
+                LAST_NAME = :lastName,
+                NATIONAL_ID = :nationalId,
+                CIVIL_STATUS = :civilStatus,
+                BIRTH_DATE = :birthDate,
+                COMPANY_NAME = :companyName,
+                VAT_NUMBER = :vatNumber,
+                NACE_CODE = :naceCode,
+                STREET = :street,
+                HOUSE_NBR = :houseNbr,
+                BOX_NBR = :boxNbr,
+                POSTAL_CODE = :postalCode,
+                CITY = :city,
+                COUNTRY_CODE = :countryCode,
+                PHONE = :phone,
+                EMAIL = :email,
+                LANGUAGE = :language,
+                STATUS = :status,
                 UPDATED_AT = CURRENT_TIMESTAMP
-            WHERE CUST_ID = :pCustomer.custId;
+            WHERE CUST_ID = :custId;
 
         success = (sqlcode = 0);
         if not success;
@@ -210,17 +258,29 @@ dcl-proc CUSTSRV_ListCustomers export;
     end-pi;
 
     dcl-s resultCount int(10) inz(0);
+    dcl-s custType char(3);
+    dcl-s lastName varchar(50);
+    dcl-s companyName varchar(100);
+    dcl-s city varchar(24);
+    dcl-s status char(3);
 
     monitor;
+        // Copy filter values
+        custType = pFilter.custType;
+        lastName = pFilter.lastName;
+        companyName = pFilter.companyName;
+        city = pFilter.city;
+        status = pFilter.status;
+
         // Business logic
         exec sql
             SELECT COUNT(*) INTO :resultCount
             FROM CUSTOMER
-            WHERE (:pFilter.custType = '' OR CUST_TYPE = :pFilter.custType)
-              AND (:pFilter.lastName = '' OR LAST_NAME LIKE :pFilter.lastName || '%')
-              AND (:pFilter.companyName = '' OR COMPANY_NAME LIKE :pFilter.companyName || '%')
-              AND (:pFilter.city = '' OR CITY = :pFilter.city)
-              AND (:pFilter.status = '' OR STATUS = :pFilter.status);
+            WHERE (:custType = '' OR CUST_TYPE = :custType)
+              AND (:lastName = '' OR LAST_NAME LIKE :lastName || '%')
+              AND (:companyName = '' OR COMPANY_NAME LIKE :companyName || '%')
+              AND (:city = '' OR CITY = :city)
+              AND (:status = '' OR STATUS = :status);
 
     on-error;
         ERRUTIL_addExecutionError();
@@ -252,7 +312,7 @@ dcl-proc CUSTSRV_IsValidCustomer export;
             ERRUTIL_addErrorCode('BUS001');
             return *off;
         endif;
-        if pCustomer.nationalId <> '' and not IsValidNationalId(pCustomer.nationalId);
+        if pCustomer.nationalId <> '' and not CUSTSRV_IsValidNationalId(pCustomer.nationalId);
             return *off;
         endif;
     endif;
@@ -263,18 +323,18 @@ dcl-proc CUSTSRV_IsValidCustomer export;
             ERRUTIL_addErrorCode('BUS002');
             return *off;
         endif;
-        if pCustomer.vatNumber <> '' and not IsValidVatNumber(pCustomer.vatNumber);
+        if pCustomer.vatNumber <> '' and not CUSTSRV_IsValidVatNumber(pCustomer.vatNumber);
             return *off;
         endif;
     endif;
 
     // Validation - Email
-    if pCustomer.email <> '' and not IsValidEmail(pCustomer.email);
+    if pCustomer.email <> '' and not CUSTSRV_IsValidEmail(pCustomer.email);
         return *off;
     endif;
 
     // Validation - Postal code
-    if pCustomer.postalCode <> '' and not IsValidPostalCode(pCustomer.postalCode);
+    if pCustomer.postalCode <> '' and not CUSTSRV_IsValidPostalCode(pCustomer.postalCode);
         return *off;
     endif;
 
