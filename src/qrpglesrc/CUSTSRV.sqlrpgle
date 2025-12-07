@@ -28,6 +28,7 @@ dcl-proc CUSTSRV_CreateCustomer export;
     end-pi;
 
     dcl-s newCustId packed(10:0) inz(0);
+    dcl-ds customer likeds(Customer_t) inz;
 
     // Initialization
     ERRUTIL_init();
@@ -38,20 +39,25 @@ dcl-proc CUSTSRV_CreateCustomer export;
             return 0;
         endif;
 
-        // Business logic - Utiliser paramètre qualified directement
+        // Copy param to local DS
+        customer = pCustomer;
+        customer.status = 'ACT';
+
+        // Business logic - INSERT using DS
         exec sql
-            INSERT INTO CUSTOMER (
+            INSERT INTO MRS1.CUSTOMER (
                 CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
                 CIVIL_STATUS, BIRTH_DATE, COMPANY_NAME, VAT_NUMBER,
                 NACE_CODE, STREET, HOUSE_NBR, BOX_NBR, POSTAL_CODE,
                 CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE, STATUS
             ) VALUES (
-                :pCustomer.custType, :pCustomer.firstName, :pCustomer.lastName,
-                :pCustomer.nationalId, :pCustomer.civilStatus, :pCustomer.birthDate,
-                :pCustomer.companyName, :pCustomer.vatNumber, :pCustomer.naceCode,
-                :pCustomer.street, :pCustomer.houseNbr, :pCustomer.boxNbr,
-                :pCustomer.postalCode, :pCustomer.city, :pCustomer.countryCode,
-                :pCustomer.phone, :pCustomer.email, :pCustomer.language, 'ACT'
+                :customer.custType, :customer.firstName, :customer.lastName,
+                :customer.nationalId, :customer.civilStatus, :customer.birthDate,
+                :customer.companyName, :customer.vatNumber, :customer.naceCode,
+                :customer.street, :customer.houseNbr, :customer.boxNbr,
+                :customer.postalCode, :customer.city, :customer.countryCode,
+                :customer.phone, :customer.email, :customer.language,
+                :customer.status
             );
 
         if sqlcode = 0;
@@ -90,7 +96,7 @@ dcl-proc CUSTSRV_GetCustomer export;
                    CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE,
                    STATUS, CREATED_AT, UPDATED_AT
             INTO :customer
-            FROM CUSTOMER
+            FROM MRS1.CUSTOMER
             WHERE CUST_ID = :pCustId;
 
         if sqlcode <> 0;
@@ -178,7 +184,7 @@ dcl-proc CUSTSRV_UpdateCustomer export;
 
         // Business logic
         exec sql
-            UPDATE CUSTOMER SET
+            UPDATE MRS1.CUSTOMER SET
                 CUST_TYPE = :custType,
                 FIRST_NAME = :firstName,
                 LAST_NAME = :lastName,
@@ -229,7 +235,7 @@ dcl-proc CUSTSRV_DeleteCustomer export;
     monitor;
         // Business logic - soft delete
         exec sql
-            UPDATE CUSTOMER SET
+            UPDATE MRS1.CUSTOMER SET
                 STATUS = 'INA',
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CUST_ID = :pCustId;
@@ -275,7 +281,7 @@ dcl-proc CUSTSRV_ListCustomers export;
         // Business logic
         exec sql
             SELECT COUNT(*) INTO :resultCount
-            FROM CUSTOMER
+            FROM MRS1.CUSTOMER
             WHERE (:custType = '' OR CUST_TYPE = :custType)
               AND (:lastName = '' OR LAST_NAME LIKE :lastName || '%')
               AND (:companyName = '' OR COMPANY_NAME LIKE :companyName || '%')
