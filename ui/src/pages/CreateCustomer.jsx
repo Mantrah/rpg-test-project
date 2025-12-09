@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
-import { customerApi } from '../services/api'
+import { customerApi, bceApi } from '../services/api'
 
 const CreateCustomer = () => {
   const navigate = useNavigate()
@@ -28,6 +28,8 @@ const CreateCustomer = () => {
   })
 
   const [errors, setErrors] = useState({})
+  const [bceSearching, setBceSearching] = useState(false)
+  const [bceError, setBceError] = useState(null)
 
   const createMutation = useMutation({
     mutationFn: customerApi.create,
@@ -85,6 +87,37 @@ const CreateCustomer = () => {
     if (digits.length <= 6) return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`
     if (digits.length <= 9) return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4, 6)}-${digits.slice(6)}`
     return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4, 6)}-${digits.slice(6, 9)}.${digits.slice(9)}`
+  }
+
+  const handleBceSearch = async () => {
+    if (!formData.vatNumber || formData.vatNumber.length < 10) {
+      setBceError('Entrez un numéro de TVA valide (ex: BE0403170701)')
+      return
+    }
+
+    setBceSearching(true)
+    setBceError(null)
+
+    try {
+      const result = await bceApi.searchByVat(formData.vatNumber)
+      const company = result.data
+
+      setFormData(prev => ({
+        ...prev,
+        companyName: company.companyName || prev.companyName,
+        vatNumber: company.vatNumber || prev.vatNumber,
+        street: company.address?.street || prev.street,
+        houseNbr: company.address?.houseNbr || prev.houseNbr,
+        boxNbr: company.address?.boxNbr || prev.boxNbr,
+        postalCode: company.address?.postalCode || prev.postalCode,
+        city: company.address?.city || prev.city,
+        countryCode: company.address?.countryCode || 'BE',
+      }))
+    } catch (error) {
+      setBceError(error.message || 'Entreprise non trouvée dans la BCE')
+    } finally {
+      setBceSearching(false)
+    }
   }
 
   return (
@@ -192,6 +225,37 @@ const CreateCustomer = () => {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Informations Entreprise
             </h2>
+
+            {/* BCE Search */}
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+              <label className="label text-purple-900">Recherche BCE (Banque-Carrefour des Entreprises)</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="N° TVA (ex: BE0403170701)"
+                  value={formData.vatNumber}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    vatNumber: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')
+                  }))}
+                  className="input-field flex-1"
+                  maxLength={12}
+                />
+                <button
+                  type="button"
+                  onClick={handleBceSearch}
+                  disabled={bceSearching}
+                  className="btn-primary whitespace-nowrap"
+                >
+                  {bceSearching ? 'Recherche...' : 'Rechercher'}
+                </button>
+              </div>
+              {bceError && <p className="text-red-600 text-sm mt-2">{bceError}</p>}
+              <p className="text-xs text-purple-700 mt-2">
+                Entrez le numéro de TVA pour auto-remplir les données de l'entreprise
+              </p>
+            </div>
+
             <div>
               <label className="label">Nom Société *</label>
               <input
@@ -207,13 +271,8 @@ const CreateCustomer = () => {
               <input
                 type="text"
                 value={formData.vatNumber}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  vatNumber: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')
-                }))}
-                placeholder="BE0123456789"
-                className="input-field"
-                maxLength={12}
+                className="input-field bg-gray-50"
+                readOnly
               />
               {errors.vatNumber && <p className="text-red-600 text-sm mt-1">{errors.vatNumber}</p>}
             </div>

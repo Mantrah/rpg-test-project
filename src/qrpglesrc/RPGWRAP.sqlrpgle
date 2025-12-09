@@ -197,7 +197,7 @@ dcl-proc WRAP_GetCustomerById export;
         oFirstName      char(50);
         oLastName       char(50);
         oNationalId     char(15);
-        oBirthDate      date;
+        oBirthDate      char(10);
         oCompanyName    char(100);
         oVatNumber      char(12);
         oStreet         char(30);
@@ -222,7 +222,12 @@ dcl-proc WRAP_GetCustomerById export;
         oFirstName = customer.firstName;
         oLastName = customer.lastName;
         oNationalId = customer.nationalId;
-        oBirthDate = customer.birthDate;
+        // Convert date to ISO char(10) for iToolkit
+        if customer.birthDate <> d'0001-01-01';
+            oBirthDate = %char(customer.birthDate:*iso);
+        else;
+            oBirthDate = '';
+        endif;
         oCompanyName = customer.companyName;
         oVatNumber = customer.vatNumber;
         oStreet = customer.street;
@@ -240,7 +245,7 @@ dcl-proc WRAP_GetCustomerById export;
         clear oFirstName;
         clear oLastName;
         clear oNationalId;
-        clear oBirthDate;
+        oBirthDate = '';
         clear oCompanyName;
         clear oVatNumber;
         clear oStreet;
@@ -281,44 +286,42 @@ dcl-proc WRAP_CreateCustomer export;
         oCustId         packed(10:0);
         oSuccess        char(1);
         oErrorCode      char(10);
+        oErrorMessage   varchar(256);
     end-pi;
 
-    dcl-s newCustId packed(10:0) inz(0);
+    dcl-ds customer likeds(Customer_t) inz;
 
-    // Full INSERT with all parameters using RTRIM
-    exec sql
-        INSERT INTO MRS1.CUSTOMER (
-            CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
-            COMPANY_NAME, VAT_NUMBER, STREET, HOUSE_NBR,
-            POSTAL_CODE, CITY, COUNTRY_CODE, PHONE, EMAIL,
-            LANGUAGE, STATUS
-        ) VALUES (
-            RTRIM(:pCustType), RTRIM(:pFirstName), RTRIM(:pLastName),
-            RTRIM(:pNationalId), RTRIM(:pCompanyName), RTRIM(:pVatNumber),
-            RTRIM(:pStreet), RTRIM(:pHouseNbr), RTRIM(:pPostalCode),
-            RTRIM(:pCity), RTRIM(:pCountryCode), RTRIM(:pPhone),
-            RTRIM(:pEmail), RTRIM(:pLanguage), 'ACT'
-        );
+    ERRUTIL_init();
 
-    // Check result
-    if sqlcode = 0;
-        exec sql
-            SELECT IDENTITY_VAL_LOCAL() INTO :newCustId FROM SYSIBM.SYSDUMMY1;
-        oCustId = newCustId;
+    customer.custType = pCustType;
+    customer.firstName = pFirstName;
+    customer.lastName = pLastName;
+    customer.nationalId = pNationalId;
+    // Convert char(10) ISO date to RPG date
+    if %trim(pBirthDate) <> '' and %trim(pBirthDate) <> '1900-01-01';
+        customer.birthDate = %date(%trim(pBirthDate):*iso);
+    endif;
+    customer.companyName = pCompanyName;
+    customer.vatNumber = pVatNumber;
+    customer.street = pStreet;
+    customer.houseNbr = pHouseNbr;
+    customer.postalCode = pPostalCode;
+    customer.city = pCity;
+    customer.countryCode = pCountryCode;
+    customer.phone = pPhone;
+    customer.email = pEmail;
+    customer.language = pLanguage;
+
+    oCustId = CUSTSRV_CreateCustomer(customer);
+
+    if oCustId > 0;
         oSuccess = 'Y';
         oErrorCode = '';
-    elseif sqlcode = -8013 or sqlcode = 8013;
-        oCustId = 0;
-        oSuccess = 'N';
-        oErrorCode = 'LIC8013';
+        oErrorMessage = '';
     else;
-        oCustId = 0;
         oSuccess = 'N';
-        if sqlcode < 0;
-            oErrorCode = 'SQL-' + %char(%abs(sqlcode));
-        else;
-            oErrorCode = 'SQL' + %char(sqlcode);
-        endif;
+        oErrorCode = ERRUTIL_getLastErrorCode();
+        oErrorMessage = ERRUTIL_getLastError();
     endif;
 end-proc;
 
@@ -367,12 +370,19 @@ dcl-proc WRAP_ListCustomers export;
 
         exec sql OPEN C_CUSTOMERS;
 
+        // SQLCODE 8013 = PUB400 licensing - ignore and return empty
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
+            oJsonData = '[]';
+            oSuccess = 'Y';
+            return;
+        endif;
+
         exec sql
             FETCH C_CUSTOMERS INTO :custId, :custType, :firstName, :lastName,
                 :nationalId, :companyName, :street, :postalCode, :city,
                 :phone, :email, :language, :custStatus;
 
-        dow sqlcode = 0;
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -414,6 +424,32 @@ dcl-proc WRAP_ListCustomers export;
 end-proc;
 
 //--------------------------------------------------------------
+// DeleteCustomer : Soft delete customer (set status to INA)
+//--------------------------------------------------------------
+dcl-proc WRAP_DeleteCustomer export;
+    dcl-pi *n;
+        pCustId         packed(10:0) const;
+        // OUTPUT
+        oSuccess        char(1);
+        oErrorCode      char(10);
+    end-pi;
+
+    dcl-s success ind;
+
+    ERRUTIL_init();
+
+    success = CUSTSRV_DeleteCustomer(pCustId);
+
+    if success;
+        oSuccess = 'Y';
+        oErrorCode = '';
+    else;
+        oSuccess = 'N';
+        oErrorCode = ERRUTIL_getLastErrorCode();
+    endif;
+end-proc;
+
+//--------------------------------------------------------------
 // GetCustomerByEmail : Get customer by email address
 //--------------------------------------------------------------
 dcl-proc WRAP_GetCustomerByEmail export;
@@ -452,7 +488,8 @@ dcl-proc WRAP_GetCustomerByEmail export;
             FROM MRS1.CUSTOMER
             WHERE EMAIL = :emailFilter;
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             oSuccess = 'Y';
             oErrorCode = '';
         elseif sqlcode = 100;
@@ -525,7 +562,8 @@ dcl-proc WRAP_GetCustomerContracts export;
             FETCH C_CUST_CONTRACTS INTO :contId, :contReference, :brokerId,
                 :productId, :startDate, :endDate, :premiumAmt, :contStatus;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -617,7 +655,8 @@ dcl-proc WRAP_ListProducts export;
                 :productType, :basePremium, :coverageLimit, :minThreshold,
                 :waitingMonths, :prodStatus;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -686,7 +725,8 @@ dcl-proc WRAP_GetProductByCode export;
             FROM MRS1.PRODUCT
             WHERE PRODUCT_CODE = :codeFilter;
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             oSuccess = 'Y';
             oErrorCode = '';
         elseif sqlcode = 100;
@@ -751,7 +791,8 @@ dcl-proc WRAP_GetProductGuarantees export;
             FETCH C_PROD_GUARANTEES INTO :guaranteeCode, :guaranteeName,
                 :description, :coveragePct, :maxAmount, :waitingDays;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -853,21 +894,33 @@ dcl-proc WRAP_CalculatePremium export;
     dcl-c FREQ_MONTHLY 0.05;
     dcl-c FREQ_QUARTERLY 0.02;
 
-    oBasePremium = PRODSRV_CalculateBasePremium(pProductCode: 0);
-    oVehicleAddon = pVehiclesCount * VEHICLE_ADDON;
+    // Initialize outputs
+    oBasePremium = 0;
+    oVehicleAddon = 0;
+    oFreqSurcharge = 0;
+    oTotalPremium = 0;
+    oSuccess = 'N';
 
-    // Calculate frequency surcharge
-    select;
-        when pPayFrequency = 'M';
-            oFreqSurcharge = (oBasePremium + oVehicleAddon) * FREQ_MONTHLY;
-        when pPayFrequency = 'Q';
-            oFreqSurcharge = (oBasePremium + oVehicleAddon) * FREQ_QUARTERLY;
-        other;
-            oFreqSurcharge = 0;
-    endsl;
+    monitor;
+        oBasePremium = PRODSRV_CalculateBasePremium(pProductCode: 0);
+        oVehicleAddon = pVehiclesCount * VEHICLE_ADDON;
 
-    oTotalPremium = oBasePremium + oVehicleAddon + oFreqSurcharge;
-    oSuccess = 'Y';
+        // Calculate frequency surcharge
+        select;
+            when pPayFrequency = 'M';
+                oFreqSurcharge = (oBasePremium + oVehicleAddon) * FREQ_MONTHLY;
+            when pPayFrequency = 'Q';
+                oFreqSurcharge = (oBasePremium + oVehicleAddon) * FREQ_QUARTERLY;
+            other;
+                oFreqSurcharge = 0;
+        endsl;
+
+        oTotalPremium = oBasePremium + oVehicleAddon + oFreqSurcharge;
+        oSuccess = 'Y';
+
+    on-error;
+        oSuccess = 'N';
+    endmon;
 end-proc;
 
 //==============================================================
@@ -885,8 +938,8 @@ dcl-proc WRAP_GetContractById export;
         oCustId         packed(10:0);
         oBrokerId       packed(10:0);
         oProductId      packed(10:0);
-        oStartDate      date;
-        oEndDate        date;
+        oStartDate      char(10);
+        oEndDate        char(10);
         oVehiclesCount  packed(2:0);
         oPayFrequency   char(1);
         oPremiumAmt     packed(9:2);
@@ -906,8 +959,17 @@ dcl-proc WRAP_GetContractById export;
         oCustId = contract.custId;
         oBrokerId = contract.brokerId;
         oProductId = contract.productId;
-        oStartDate = contract.startDate;
-        oEndDate = contract.endDate;
+        // Convert dates to ISO char(10) for iToolkit
+        if contract.startDate <> d'0001-01-01';
+            oStartDate = %char(contract.startDate:*iso);
+        else;
+            oStartDate = '';
+        endif;
+        if contract.endDate <> d'0001-01-01';
+            oEndDate = %char(contract.endDate:*iso);
+        else;
+            oEndDate = '';
+        endif;
         oVehiclesCount = contract.vehiclesCount;
         oPayFrequency = contract.payFrequency;
         oPremiumAmt = contract.premiumAmt;
@@ -920,8 +982,8 @@ dcl-proc WRAP_GetContractById export;
         oCustId = 0;
         oBrokerId = 0;
         oProductId = 0;
-        clear oStartDate;
-        clear oEndDate;
+        oStartDate = '';
+        oEndDate = '';
         oVehiclesCount = 0;
         clear oPayFrequency;
         oPremiumAmt = 0;
@@ -940,7 +1002,7 @@ dcl-proc WRAP_CreateContract export;
         pCustId         packed(10:0) const;
         pBrokerId       packed(10:0) const;
         pProductId      packed(10:0) const;
-        pStartDate      date const;
+        pStartDate      char(10) const;
         pVehiclesCount  packed(2:0) const;
         pPayFrequency   char(1) const;
         pAutoRenewal    char(1) const;
@@ -954,16 +1016,23 @@ dcl-proc WRAP_CreateContract export;
 
     dcl-ds contract likeds(Contract_t) inz;
     dcl-s newContId packed(10:0);
+    dcl-s productCode char(10);
 
     ERRUTIL_init();
+
+    // Get product code from product ID for premium calculation
+    exec sql SELECT PRODUCT_CODE INTO :productCode FROM PRODUCT WHERE PRODUCT_ID = :pProductId;
 
     contract.custId = pCustId;
     contract.brokerId = pBrokerId;
     contract.productId = pProductId;
-    contract.startDate = pStartDate;
+    // Convert char(10) ISO date string to RPG date
+    contract.startDate = %date(%trim(pStartDate):*iso);
     contract.vehiclesCount = pVehiclesCount;
     contract.payFrequency = pPayFrequency;
     contract.autoRenew = pAutoRenewal;
+    // Calculate premium before insert
+    contract.premiumAmt = CONTSRV_CalculatePremium(productCode: pVehiclesCount: pPayFrequency);
 
     newContId = CONTSRV_CreateContract(contract);
 
@@ -1037,7 +1106,8 @@ dcl-proc WRAP_ListContracts export;
                 :brokerId, :productId, :startDate, :endDate,
                 :vehiclesCount, :payFrequency, :premiumAmt, :autoRenew, :contStatus;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -1105,7 +1175,8 @@ dcl-proc WRAP_DeleteContract export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CONT_ID = :pContId;
 
-        if SQLCODE = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if SQLCODE = 0 or SQLCODE = 8013 or SQLCODE = -8013;
             oSuccess = 'Y';
             oErrorCode = '';
         else;
@@ -1174,7 +1245,8 @@ dcl-proc WRAP_ListClaims export;
                 :contId, :guaranteeCode, :declarationDate, :incidentDate,
                 :claimedAmount, :approvedAmount, :claimStatus, :resolutionType;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 oJsonData = %trim(oJsonData) + ',';
             endif;
@@ -1227,8 +1299,8 @@ dcl-proc WRAP_GetClaimById export;
         oFileReference  char(15);
         oContId         packed(10:0);
         oGuaranteeCode  char(10);
-        oDeclarationDate date;
-        oIncidentDate   date;
+        oDeclarationDate char(10);
+        oIncidentDate   char(10);
         oClaimedAmount  packed(11:2);
         oApprovedAmount packed(11:2);
         oStatus         char(3);
@@ -1247,8 +1319,17 @@ dcl-proc WRAP_GetClaimById export;
         oFileReference = claim.fileReference;
         oContId = claim.contId;
         oGuaranteeCode = claim.guaranteeCode;
-        oDeclarationDate = claim.declarationDate;
-        oIncidentDate = claim.incidentDate;
+        // Convert dates to ISO char(10) for iToolkit
+        if claim.declarationDate <> d'0001-01-01';
+            oDeclarationDate = %char(claim.declarationDate:*iso);
+        else;
+            oDeclarationDate = '';
+        endif;
+        if claim.incidentDate <> d'0001-01-01';
+            oIncidentDate = %char(claim.incidentDate:*iso);
+        else;
+            oIncidentDate = '';
+        endif;
         oClaimedAmount = claim.claimedAmount;
         oApprovedAmount = claim.approvedAmount;
         oStatus = claim.status;
@@ -1260,8 +1341,8 @@ dcl-proc WRAP_GetClaimById export;
         clear oFileReference;
         oContId = 0;
         clear oGuaranteeCode;
-        clear oDeclarationDate;
-        clear oIncidentDate;
+        oDeclarationDate = '';
+        oIncidentDate = '';
         oClaimedAmount = 0;
         oApprovedAmount = 0;
         clear oStatus;
@@ -1278,7 +1359,7 @@ dcl-proc WRAP_CreateClaim export;
     dcl-pi *n;
         pContId         packed(10:0) const;
         pGuaranteeCode  char(10) const;
-        pIncidentDate   date const;
+        pIncidentDate   char(10) const;
         pClaimedAmount  packed(11:2) const;
         pDescription    char(500) const;
         // OUTPUT
@@ -1296,7 +1377,12 @@ dcl-proc WRAP_CreateClaim export;
 
     claim.contId = pContId;
     claim.guaranteeCode = pGuaranteeCode;
-    claim.incidentDate = pIncidentDate;
+    // Convert char(10) ISO date to RPG date
+    if %trim(pIncidentDate) <> '';
+        claim.incidentDate = %date(%trim(pIncidentDate):*iso);
+    else;
+        claim.incidentDate = %date();
+    endif;
     claim.claimedAmount = pClaimedAmount;
     claim.description = pDescription;
 
@@ -1327,7 +1413,7 @@ dcl-proc WRAP_ValidateClaim export;
         pContId         packed(10:0) const;
         pGuaranteeCode  char(10) const;
         pClaimedAmount  packed(11:2) const;
-        pIncidentDate   date const;
+        pIncidentDate   char(10) const;
         // OUTPUT
         oIsValid        char(1);
         oIsCovered      char(1);
@@ -1339,8 +1425,16 @@ dcl-proc WRAP_ValidateClaim export;
 
     dcl-s isCovered ind;
     dcl-s inWaiting ind;
+    dcl-s incDate date;
 
     ERRUTIL_init();
+
+    // Convert char(10) ISO date to RPG date
+    if %trim(pIncidentDate) <> '';
+        incDate = %date(%trim(pIncidentDate):*iso);
+    else;
+        incDate = %date();
+    endif;
 
     // Check if guarantee is covered by the contract's product
     isCovered = CLAIMSRV_IsCovered(pContId: pGuaranteeCode);
@@ -1350,7 +1444,7 @@ dcl-proc WRAP_ValidateClaim export;
     endif;
 
     // Check if still in waiting period
-    inWaiting = CLAIMSRV_IsInWaitingPeriod(pContId: pGuaranteeCode: pIncidentDate);
+    inWaiting = CLAIMSRV_IsInWaitingPeriod(pContId: pGuaranteeCode: incDate);
     oWaitingPassed = 'Y';
     oWaitingDays = 0;
     if inWaiting;

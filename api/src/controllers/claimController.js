@@ -1,14 +1,13 @@
 /**
  * Claim Controller
  * HTTP request handlers for claim endpoints
- * Uses RPG backend via iToolkit for business operations
+ * ALL data access goes through RPG via rpgConnector
  */
 
 const rpgConnector = require('../config/rpgConnector');
-const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
-const { STATUS, BUSINESS_RULES } = require('../config/constants');
+const { STATUS } = require('../config/constants');
 
 /**
  * Create new claim via RPG
@@ -55,7 +54,7 @@ const createClaim = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get all claims - SQL read-only
+ * Get all claims via RPG
  * GET /api/claims?status=NEW
  */
 const getAllClaims = asyncHandler(async (req, res) => {
@@ -72,14 +71,7 @@ const getAllClaims = asyncHandler(async (req, res) => {
     });
   }
 
-  let sql = 'SELECT * FROM CLAIM';
-  const params = [];
-  if (status) {
-    sql += ' WHERE STATUS = ?';
-    params.push(status);
-  }
-  sql += ' ORDER BY DECLARATION_DATE DESC';
-  const claims = await query(sql, params);
+  const claims = await rpgConnector.listClaims(status || '');
   res.json(success(claims));
 });
 
@@ -105,7 +97,7 @@ const getClaimById = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get claim by reference - SQL read-only
+ * Get claim by reference via RPG
  * GET /api/claims/reference/:reference
  */
 const getClaimByReference = asyncHandler(async (req, res) => {
@@ -121,18 +113,20 @@ const getClaimByReference = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = 'SELECT * FROM CLAIM WHERE CLAIM_REFERENCE = ?';
-  const result = await query(sql, [reference]);
-  if (!result || result.length === 0) {
+  // Get all claims and filter by reference
+  const claims = await rpgConnector.listClaims('');
+  const claim = claims.find(c => c.CLAIM_REFERENCE === reference);
+
+  if (!claim) {
     const error = new Error('Claim not found');
     error.statusCode = 404;
     throw error;
   }
-  res.json(success(result[0]));
+  res.json(success(claim));
 });
 
 /**
- * Check coverage for contract and guarantee - SQL read-only
+ * Check coverage for contract and guarantee via RPG
  * POST /api/claims/check-coverage
  * Body: { contId, guaranteeCode }
  */
@@ -150,15 +144,19 @@ const checkCoverage = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = `
-    SELECT 1 AS IS_COVERED
-    FROM CONTRACT C
-    JOIN PRODUCT_GUARANTEE PG ON C.PRODUCT_ID = PG.PRODUCT_ID
-    WHERE C.CONT_ID = ? AND PG.GUARANTEE_CODE = ? AND C.STATUS = 'ACT'
-  `;
-  const result = await query(sql, [contId, guaranteeCode]);
-  const isCovered = result && result.length > 0;
-  res.json(success({ isCovered, contId, guaranteeCode }));
+  // Use validateClaim to check coverage
+  const validation = await rpgConnector.validateClaim(
+    contId,
+    guaranteeCode,
+    1000, // dummy amount for coverage check
+    new Date().toISOString().split('T')[0]
+  );
+
+  res.json(success({
+    isCovered: validation.isCovered,
+    contId,
+    guaranteeCode
+  }));
 });
 
 /**
@@ -200,51 +198,19 @@ const validateClaim = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get claims statistics - SQL read-only
+ * Get claims statistics via RPG (from dashboard stats)
  * GET /api/claims/stats
  */
 const getClaimsStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT
-      COUNT(*) AS TOTAL_CLAIMS,
-      SUM(CASE WHEN STATUS = 'NEW' THEN 1 ELSE 0 END) AS NEW_CLAIMS,
-      SUM(CASE WHEN STATUS = 'REV' THEN 1 ELSE 0 END) AS UNDER_REVIEW,
-      SUM(CASE WHEN STATUS = 'APP' THEN 1 ELSE 0 END) AS APPROVED_CLAIMS,
-      SUM(CASE WHEN STATUS = 'REJ' THEN 1 ELSE 0 END) AS REJECTED_CLAIMS,
-      SUM(CASE WHEN STATUS = 'CLS' THEN 1 ELSE 0 END) AS CLOSED_CLAIMS,
-      SUM(CASE WHEN RESOLUTION_TYPE = 'AMI' THEN 1 ELSE 0 END) AS AMICABLE_RESOLUTIONS,
-      SUM(CASE WHEN RESOLUTION_TYPE = 'TRI' THEN 1 ELSE 0 END) AS TRIBUNAL_RESOLUTIONS,
-      SUM(CLAIMED_AMOUNT) AS TOTAL_CLAIMED,
-      SUM(APPROVED_AMOUNT) AS TOTAL_APPROVED,
-      AVG(CLAIMED_AMOUNT) AS AVG_CLAIMED,
-      AVG(APPROVED_AMOUNT) AS AVG_APPROVED
-    FROM CLAIM
-  `;
-
-  const result = await query(sql);
-  const stats = result[0];
-
-  // Calculate amicable resolution rate (target: 79%)
-  const totalResolved = (stats.AMICABLE_RESOLUTIONS || 0) + (stats.TRIBUNAL_RESOLUTIONS || 0);
-  const amicableRate = totalResolved > 0
-    ? Math.round((stats.AMICABLE_RESOLUTIONS / totalResolved) * 100)
-    : 0;
+  // Get dashboard stats which includes claim stats
+  const dashboardStats = await rpgConnector.getDashboardStats();
 
   const response = {
-    totalClaims: stats.TOTAL_CLAIMS || 0,
-    newClaims: stats.NEW_CLAIMS || 0,
-    underReview: stats.UNDER_REVIEW || 0,
-    approvedClaims: stats.APPROVED_CLAIMS || 0,
-    rejectedClaims: stats.REJECTED_CLAIMS || 0,
-    closedClaims: stats.CLOSED_CLAIMS || 0,
-    amicableResolutions: stats.AMICABLE_RESOLUTIONS || 0,
-    tribunalResolutions: stats.TRIBUNAL_RESOLUTIONS || 0,
-    amicableRate: amicableRate,
-    amicableRateTarget: 79, // DAS Belgium target
-    totalClaimed: parseFloat(stats.TOTAL_CLAIMED || 0),
-    totalApproved: parseFloat(stats.TOTAL_APPROVED || 0),
-    avgClaimed: parseFloat(stats.AVG_CLAIMED || 0),
-    avgApproved: parseFloat(stats.AVG_APPROVED || 0)
+    totalClaims: dashboardStats.claims.total || 0,
+    amicableResolutions: dashboardStats.claims.amicableResolutions || 0,
+    tribunalResolutions: dashboardStats.claims.tribunalResolutions || 0,
+    amicableRate: dashboardStats.claims.amicableRate || 0,
+    amicableRateTarget: 79 // DAS Belgium target
   };
 
   res.json(success(response));

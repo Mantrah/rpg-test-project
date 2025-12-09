@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -38,10 +38,12 @@ export const brokerApi = {
 // Customers
 export const customerApi = {
   getAll: (status = null) => api.get('/customers', { params: { status } }),
+  list: () => api.get('/customers'),
   getById: (id) => api.get(`/customers/${id}`),
   getByEmail: (email) => api.get(`/customers/email/${email}`),
   getContracts: (id) => api.get(`/customers/${id}/contracts`),
   create: (data) => api.post('/customers', data),
+  delete: (id) => api.delete(`/customers/${id}`),
 };
 
 // Products

@@ -153,4 +153,15 @@ router.get('/connattr', async (req, res) => {
   }
 });
 
+// Check environment variables
+router.get('/checkenv', (req, res) => {
+  res.json({
+    success: true,
+    hasToken: !!process.env.CBEAPI_TOKEN,
+    tokenLength: process.env.CBEAPI_TOKEN?.length || 0,
+    port: process.env.PORT,
+    nodeEnv: process.env.NODE_ENV
+  });
+});
+
 module.exports = router;

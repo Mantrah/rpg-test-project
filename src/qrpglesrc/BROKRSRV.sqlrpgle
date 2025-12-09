@@ -54,8 +54,8 @@ dcl-proc BROKRSRV_CreateBroker export;
                 :pBroker.contactName, 'ACT'
             );
 
-        // Check INSERT result
-        if sqlcode = 0;
+        // Check INSERT result - treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             // Get the new broker ID using MAX (more reliable than IDENTITY_VAL_LOCAL)
             exec sql
                 SELECT MAX(BROKER_ID) INTO :newBrokerId FROM BROKER;
@@ -94,7 +94,8 @@ dcl-proc BROKRSRV_GetBroker export;
             FROM BROKER
             WHERE BROKER_ID = :pBrokerId;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear broker;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -135,7 +136,8 @@ dcl-proc BROKRSRV_GetBrokerByCode export;
             FROM BROKER
             WHERE BROKER_CODE = :pBrokerCode;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear broker;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -194,7 +196,8 @@ dcl-proc BROKRSRV_UpdateBroker export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE BROKER_ID = :pBroker.brokerId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -227,7 +230,8 @@ dcl-proc BROKRSRV_DeleteBroker export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE BROKER_ID = :pBrokerId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -381,7 +385,8 @@ dcl-proc BROKRSRV_ListBrokersJson export;
                 :vatNumber, :fsmaNumber, :street, :houseNbr,
                 :postalCode, :city, :phone, :email, :contactName, :brokerStatus;
 
-        dow sqlcode = 0;
+        // Also handle SQLCODE 8013 (PUB400 licensing)
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             if not firstRow;
                 pJsonData = %trim(pJsonData) + ',';
             endif;

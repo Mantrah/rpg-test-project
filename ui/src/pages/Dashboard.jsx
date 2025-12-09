@@ -19,13 +19,39 @@ const Dashboard = () => {
   if (isLoading) return <Loading message="Chargement du dashboard..." />
   if (error) return <ErrorMessage message={error.message} code={error.code} />
 
-  const { brokers, customers, contracts, claims } = stats.data
+  // Extract data with defaults for missing properties
+  const brokers = stats.data?.brokers || { total: 0, active: 0 }
+  const customers = {
+    total: stats.data?.customers?.total || 0,
+    active: stats.data?.customers?.active || 0,
+    individual: stats.data?.customers?.individual || 0,
+    business: stats.data?.customers?.business || 0
+  }
+  const contracts = {
+    total: stats.data?.contracts?.total || 0,
+    active: stats.data?.contracts?.active || 0,
+    autoRenewal: stats.data?.contracts?.autoRenewal || 0
+  }
+  const claims = {
+    total: stats.data?.claims?.total || 0,
+    new: stats.data?.claims?.new || 0,
+    underReview: stats.data?.claims?.underReview || 0,
+    approved: stats.data?.claims?.approved || 0,
+    rejected: stats.data?.claims?.rejected || 0,
+    closed: stats.data?.claims?.closed || 0,
+    amicableResolutions: stats.data?.claims?.amicableResolutions || 0,
+    tribunalResolutions: stats.data?.claims?.tribunalResolutions || 0,
+    amicableRate: stats.data?.claims?.amicableRate || 0,
+    amicableRateTarget: stats.data?.claims?.amicableRateTarget || 79,
+    totalClaimed: stats.data?.claims?.totalClaimed || 0,
+    totalApproved: stats.data?.claims?.totalApproved || 0
+  }
 
   // Format data for pie chart
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8']
   const pieData = claimsByStatus?.data?.map(item => ({
-    name: item.label,
-    value: item.count
+    name: item.STATUS || item.label || 'Unknown',
+    value: item.COUNT || item.count || 0
   })) || []
 
   return (

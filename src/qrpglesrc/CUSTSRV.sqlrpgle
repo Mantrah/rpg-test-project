@@ -60,7 +60,8 @@ dcl-proc CUSTSRV_CreateCustomer export;
                 :customer.status
             );
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             exec sql
                 SELECT IDENTITY_VAL_LOCAL() INTO :newCustId FROM SYSIBM.SYSDUMMY1;
         else;
@@ -99,7 +100,8 @@ dcl-proc CUSTSRV_GetCustomer export;
             FROM MRS1.CUSTOMER
             WHERE CUST_ID = :pCustId;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear customer;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -207,7 +209,8 @@ dcl-proc CUSTSRV_UpdateCustomer export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CUST_ID = :custId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -240,7 +243,8 @@ dcl-proc CUSTSRV_DeleteCustomer export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CUST_ID = :pCustId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -309,13 +313,21 @@ dcl-proc CUSTSRV_IsValidCustomer export;
     // Validation - Customer type
     if pCustomer.custType <> 'IND' and pCustomer.custType <> 'BUS';
         ERRUTIL_addErrorCode('VAL006');
+        ERRUTIL_addErrorMessage('custType: must be IND or BUS, got: ' +
+                                %trim(pCustomer.custType));
         return *off;
     endif;
 
     // Validation - Individual requirements
     if pCustomer.custType = 'IND';
-        if pCustomer.firstName = '' or pCustomer.lastName = '';
+        if pCustomer.firstName = '';
             ERRUTIL_addErrorCode('BUS001');
+            ERRUTIL_addErrorMessage('firstName: required for individual customer');
+            return *off;
+        endif;
+        if pCustomer.lastName = '';
+            ERRUTIL_addErrorCode('BUS001');
+            ERRUTIL_addErrorMessage('lastName: required for individual customer');
             return *off;
         endif;
         if pCustomer.nationalId <> '' and not CUSTSRV_IsValidNationalId(pCustomer.nationalId);
@@ -327,6 +339,7 @@ dcl-proc CUSTSRV_IsValidCustomer export;
     if pCustomer.custType = 'BUS';
         if pCustomer.companyName = '';
             ERRUTIL_addErrorCode('BUS002');
+            ERRUTIL_addErrorMessage('companyName: required for business customer');
             return *off;
         endif;
         if pCustomer.vatNumber <> '' and not CUSTSRV_IsValidVatNumber(pCustomer.vatNumber);
@@ -365,12 +378,16 @@ dcl-proc CUSTSRV_IsValidEmail export;
     atPos = %scan('@': pEmail);
     if atPos < 2;
         ERRUTIL_addErrorCode('VAL001');
+        ERRUTIL_addErrorMessage('email: missing or invalid @ position in: ' +
+                                %trim(pEmail));
         return *off;
     endif;
 
     dotPos = %scan('.': pEmail: atPos);
     if dotPos = 0 or dotPos <= atPos + 1;
         ERRUTIL_addErrorCode('VAL001');
+        ERRUTIL_addErrorMessage('email: missing domain dot after @ in: ' +
+                                %trim(pEmail));
         return *off;
     endif;
 
@@ -397,11 +414,15 @@ dcl-proc CUSTSRV_IsValidVatNumber export;
     // Validation - Belgian VAT: BE + 10 digits
     if %len(%trim(vatNum)) <> 12;
         ERRUTIL_addErrorCode('VAL002');
+        ERRUTIL_addErrorMessage('vatNumber: must be 12 chars (BE+10 digits), got: ' +
+                                %trim(vatNum));
         return *off;
     endif;
 
     if %subst(vatNum: 1: 2) <> 'BE';
         ERRUTIL_addErrorCode('VAL002');
+        ERRUTIL_addErrorMessage('vatNumber: must start with BE, got: ' +
+                                %subst(vatNum: 1: 2));
         return *off;
     endif;
 
@@ -410,6 +431,8 @@ dcl-proc CUSTSRV_IsValidVatNumber export;
     for i = 1 to 10;
         if %subst(numPart: i: 1) < '0' or %subst(numPart: i: 1) > '9';
             ERRUTIL_addErrorCode('VAL002');
+            ERRUTIL_addErrorMessage('vatNumber: position ' + %char(i+2) +
+                                    ' must be digit in: ' + %trim(vatNum));
             return *off;
         endif;
     endfor;
@@ -432,6 +455,8 @@ dcl-proc CUSTSRV_IsValidNationalId export;
     // Simplified validation - check length and basic format
     if %len(%trim(pNationalId)) < 11;
         ERRUTIL_addErrorCode('VAL003');
+        ERRUTIL_addErrorMessage('nationalId: min 11 chars (YY.MM.DD-XXX.CC), got: ' +
+                                %trim(pNationalId));
         return *off;
     endif;
 
@@ -456,12 +481,16 @@ dcl-proc CUSTSRV_IsValidPostalCode export;
     code = %trim(pPostalCode);
     if %len(code) <> 4;
         ERRUTIL_addErrorCode('VAL004');
+        ERRUTIL_addErrorMessage('postalCode: must be 4 digits (1000-9999), got: ' +
+                                %trim(pPostalCode));
         return *off;
     endif;
 
     for i = 1 to 4;
         if %subst(code: i: 1) < '0' or %subst(code: i: 1) > '9';
             ERRUTIL_addErrorCode('VAL004');
+            ERRUTIL_addErrorMessage('postalCode: position ' + %char(i) +
+                                    ' must be digit in: ' + %trim(pPostalCode));
             return *off;
         endif;
     endfor;

@@ -32,7 +32,8 @@ const errorHandler = (err, req, res, next) => {
     code = 'DB004';
   }
 
-  const status = getHttpStatus(code);
+  // Use explicit statusCode if set, otherwise derive from error code
+  const status = err.statusCode || getHttpStatus(code);
   res.status(status).json(error(code, message, details));
 };
 

@@ -19,13 +19,13 @@ const VALID_CONTRACT_STATUS = ['ACT', 'SUS', 'CLS', 'EXP'];
 const createContract = asyncHandler(async (req, res) => {
   const contractData = req.body;
 
-  // Validate required fields
-  if (!contractData.brokerId || !contractData.custId || !contractData.productId) {
+  // Validate required fields (accept productId OR productCode)
+  if (!contractData.brokerId || !contractData.custId || (!contractData.productId && !contractData.productCode)) {
     return res.status(400).json({
       success: false,
       error: {
         code: 'VAL002',
-        message: 'Broker ID, Customer ID, and Product ID are required.'
+        message: 'Broker ID, Customer ID, and Product ID or Product Code are required.'
       }
     });
   }
@@ -41,8 +41,9 @@ const createContract = asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate payment frequency
-  if (contractData.payFrequency && !PAYMENT_FREQUENCY[contractData.payFrequency]) {
+  // Validate payment frequency (check if value exists in PAYMENT_FREQUENCY values)
+  const validFrequencies = Object.values(PAYMENT_FREQUENCY);
+  if (contractData.payFrequency && !validFrequencies.includes(contractData.payFrequency)) {
     return res.status(400).json({
       success: false,
       error: {
@@ -61,6 +62,21 @@ const createContract = asyncHandler(async (req, res) => {
         message: 'Vehicles count must be between 0 and 99.'
       }
     });
+  }
+
+  // If productCode is provided but not productId, lookup the productId
+  if (!contractData.productId && contractData.productCode) {
+    const product = await rpgConnector.getProductByCode(contractData.productCode);
+    if (!product || !product.productId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VAL004',
+          message: `Product not found: ${contractData.productCode}`
+        }
+      });
+    }
+    contractData.productId = product.productId;
   }
 
   const contract = await rpgConnector.createContract(contractData);
@@ -214,8 +230,9 @@ const calculatePremium = asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate payment frequency
-  if (!PAYMENT_FREQUENCY[payFrequency]) {
+  // Validate payment frequency (check if value exists)
+  const validFreqs = Object.values(PAYMENT_FREQUENCY);
+  if (!validFreqs.includes(payFrequency)) {
     return res.status(400).json({
       success: false,
       error: {

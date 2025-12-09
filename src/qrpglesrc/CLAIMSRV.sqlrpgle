@@ -85,7 +85,8 @@ dcl-proc CLAIMSRV_CreateClaim export;
                 :claim.description, :claim.claimedAmount, 'NEW'
             );
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             exec sql
                 SELECT IDENTITY_VAL_LOCAL() INTO :newClaimId FROM SYSIBM.SYSDUMMY1;
 
@@ -135,7 +136,8 @@ dcl-proc CLAIMSRV_GetClaim export;
             FROM CLAIM
             WHERE CLAIM_ID = :pClaimId;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear claim;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -176,7 +178,8 @@ dcl-proc CLAIMSRV_GetClaimByRef export;
             FROM CLAIM
             WHERE CLAIM_REFERENCE = :pClaimReference;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear claim;
         endif;
 
@@ -228,7 +231,8 @@ dcl-proc CLAIMSRV_UpdateClaim export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CLAIM_ID = :pClaim.claimId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -359,7 +363,8 @@ dcl-proc CLAIMSRV_IsCovered export;
             FROM CONTRACT
             WHERE CONT_ID = :pContId;
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             return PRODSRV_HasGuarantee(productId: pGuaranteeCode);
         endif;
 
@@ -396,7 +401,8 @@ dcl-proc CLAIMSRV_IsInWaitingPeriod export;
             FROM CONTRACT
             WHERE CONT_ID = :pContId;
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             // Get waiting period for this guarantee
             waitingMonths = PRODSRV_GetGuaranteeWaitingPeriod(productId: pGuaranteeCode);
 
@@ -437,7 +443,8 @@ dcl-proc CLAIMSRV_AssignLawyer export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CLAIM_ID = :pClaimId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -499,7 +506,8 @@ dcl-proc CLAIMSRV_ResolveClaim export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CLAIM_ID = :pClaimId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;

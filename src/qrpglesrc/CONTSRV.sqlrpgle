@@ -66,7 +66,8 @@ dcl-proc CONTSRV_CreateContract export;
                 :contract.vehiclesCount, :contract.autoRenew, 'ACT'
             );
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             exec sql
                 SELECT IDENTITY_VAL_LOCAL() INTO :newContId FROM SYSIBM.SYSDUMMY1;
         else;
@@ -107,7 +108,8 @@ dcl-proc CONTSRV_GetContract export;
             FROM CONTRACT
             WHERE CONT_ID = :pContId;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear contract;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -147,7 +149,8 @@ dcl-proc CONTSRV_GetContractByRef export;
             FROM CONTRACT
             WHERE CONT_REFERENCE = :pContReference;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear contract;
         endif;
 
@@ -198,7 +201,8 @@ dcl-proc CONTSRV_UpdateContract export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CONT_ID = :pContract.contId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -231,7 +235,8 @@ dcl-proc CONTSRV_CancelContract export;
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE CONT_ID = :pContId;
 
-        success = (sqlcode = 0);
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        success = (sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013);
         if not success;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -505,7 +510,8 @@ dcl-proc CONTSRV_IsContractActive export;
             FROM CONTRACT
             WHERE CONT_ID = :pContId;
 
-        if sqlcode = 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             return (status = 'ACT' and today >= startDate and today <= endDate);
         endif;
 

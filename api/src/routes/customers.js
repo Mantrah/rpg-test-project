@@ -43,4 +43,11 @@ router.get('/email/:email', customerController.getCustomerByEmail);
  */
 router.get('/:id/contracts', customerController.getCustomerContracts);
 
+/**
+ * @route   DELETE /api/customers/:id
+ * @desc    Delete customer (soft delete - sets status to INA)
+ * @access  Public
+ */
+router.delete('/:id', customerController.deleteCustomer);
+
 module.exports = router;

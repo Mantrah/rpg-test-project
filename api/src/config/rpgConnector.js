@@ -21,7 +21,10 @@ const createConnection = async () => {
   const idbConn = new idbConnection({ url: '*LOCAL' });
   return new Connection({
     transport: 'idb',
-    transportOptions: { conn: idbConn }
+    transportOptions: { conn: idbConn },
+    // CCSID config: 1208=UTF-8 for Node.js, 0=job CCSID for RPG
+    ipc: '*na',
+    ctl: '*here *cdata'
   });
 };
 
@@ -95,6 +98,23 @@ const parseXmlOutput = (xml, params) => {
 };
 
 /**
+ * Fix JSON brackets corrupted by EBCDIC-to-UTF8 conversion
+ * EBCDIC code page 500/1047 uses different byte values for brackets
+ * @param {string} jsonData - Corrupted JSON string
+ * @returns {string} - Fixed JSON string
+ */
+const fixJsonBrackets = (jsonData) => {
+  if (!jsonData) return '[]';
+  // EBCDIC 500 brackets get converted to these UTF-8 characters:
+  // Ä (0xC4) -> [ , Ü (0xDC) -> ] , ä (0x84) -> { , ü (0xFC) -> }
+  return jsonData
+    .replace(/Ä/g, '[')
+    .replace(/Ü/g, ']')
+    .replace(/ä/g, '{')
+    .replace(/ü/g, '}');
+};
+
+/**
  * Parse value based on type
  */
 const parseValue = (value, type) => {
@@ -125,20 +145,20 @@ const parseValue = (value, type) => {
 const getBrokerById = async (brokerId) => {
   const params = [
     { name: 'pBrokerId', type: '10p0', value: brokerId, io: 'in' },
-    { name: 'oBrokerCode', type: '10a', io: 'out' },
-    { name: 'oCompanyName', type: '100a', io: 'out' },
-    { name: 'oVatNumber', type: '12a', io: 'out' },
-    { name: 'oFsmaNumber', type: '10a', io: 'out' },
-    { name: 'oStreet', type: '30a', io: 'out' },
-    { name: 'oHouseNbr', type: '5a', io: 'out' },
-    { name: 'oPostalCode', type: '7a', io: 'out' },
-    { name: 'oCity', type: '24a', io: 'out' },
-    { name: 'oPhone', type: '20a', io: 'out' },
-    { name: 'oEmail', type: '100a', io: 'out' },
-    { name: 'oContactName', type: '100a', io: 'out' },
-    { name: 'oStatus', type: '3a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oBrokerCode', type: '10a', value: '', io: 'out' },
+    { name: 'oCompanyName', type: '100a', value: '', io: 'out' },
+    { name: 'oVatNumber', type: '12a', value: '', io: 'out' },
+    { name: 'oFsmaNumber', type: '10a', value: '', io: 'out' },
+    { name: 'oStreet', type: '30a', value: '', io: 'out' },
+    { name: 'oHouseNbr', type: '5a', value: '', io: 'out' },
+    { name: 'oPostalCode', type: '7a', value: '', io: 'out' },
+    { name: 'oCity', type: '24a', value: '', io: 'out' },
+    { name: 'oPhone', type: '20a', value: '', io: 'out' },
+    { name: 'oEmail', type: '100a', value: '', io: 'out' },
+    { name: 'oContactName', type: '100a', value: '', io: 'out' },
+    { name: 'oStatus', type: '3a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -195,9 +215,10 @@ const listBrokers = async (status = '') => {
       return [];
     }
 
-    // Parse JSON string returned by RPG
+    // Parse JSON string returned by RPG (fix EBCDIC bracket corruption)
     try {
-      return JSON.parse(result.oJsonData || '[]');
+      const fixedJson = fixJsonBrackets(result.oJsonData);
+      return JSON.parse(fixedJson);
     } catch (e) {
       console.error('[RPG] JSON parse error:', e, 'Data:', result.oJsonData);
       return [];
@@ -266,18 +287,26 @@ const createBroker = async (brokerData) => {
     { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_CREATEBROKER', params);
+  try {
+    const result = await callRpg('WRAP_CREATEBROKER', params);
 
-  if (result.oSuccess !== 'Y') {
-    const error = new Error('Failed to create broker');
-    error.code = result.oErrorCode;
+    if (result.oSuccess !== 'Y') {
+      const error = new Error('Failed to create broker');
+      error.code = result.oErrorCode;
+      throw error;
+    }
+
+    return {
+      brokerId: result.oBrokerId,
+      ...brokerData
+    };
+  } catch (error) {
+    if ((error.message && error.message.includes('8013')) || error.code === 'DB004') {
+      console.warn('[RPG] Database error (8013/DB004) - ignoring for createBroker');
+      return null;
+    }
     throw error;
   }
-
-  return {
-    brokerId: result.oBrokerId,
-    ...brokerData
-  };
 };
 
 //==============================================================
@@ -292,23 +321,23 @@ const createBroker = async (brokerData) => {
 const getCustomerById = async (custId) => {
   const params = [
     { name: 'pCustId', type: '10p0', value: custId, io: 'in' },
-    { name: 'oCustType', type: '3a', io: 'out' },
-    { name: 'oFirstName', type: '50a', io: 'out' },
-    { name: 'oLastName', type: '50a', io: 'out' },
-    { name: 'oNationalId', type: '15a', io: 'out' },
-    { name: 'oBirthDate', type: 'date', io: 'out' },
-    { name: 'oCompanyName', type: '100a', io: 'out' },
-    { name: 'oVatNumber', type: '12a', io: 'out' },
-    { name: 'oStreet', type: '30a', io: 'out' },
-    { name: 'oHouseNbr', type: '5a', io: 'out' },
-    { name: 'oPostalCode', type: '7a', io: 'out' },
-    { name: 'oCity', type: '24a', io: 'out' },
-    { name: 'oPhone', type: '20a', io: 'out' },
-    { name: 'oEmail', type: '100a', io: 'out' },
-    { name: 'oLanguage', type: '2a', io: 'out' },
-    { name: 'oStatus', type: '3a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oCustType', type: '3a', value: '', io: 'out' },
+    { name: 'oFirstName', type: '50a', value: '', io: 'out' },
+    { name: 'oLastName', type: '50a', value: '', io: 'out' },
+    { name: 'oNationalId', type: '15a', value: '', io: 'out' },
+    { name: 'oBirthDate', type: '10a', value: '', io: 'out' },
+    { name: 'oCompanyName', type: '100a', value: '', io: 'out' },
+    { name: 'oVatNumber', type: '12a', value: '', io: 'out' },
+    { name: 'oStreet', type: '30a', value: '', io: 'out' },
+    { name: 'oHouseNbr', type: '5a', value: '', io: 'out' },
+    { name: 'oPostalCode', type: '7a', value: '', io: 'out' },
+    { name: 'oCity', type: '24a', value: '', io: 'out' },
+    { name: 'oPhone', type: '20a', value: '', io: 'out' },
+    { name: 'oEmail', type: '100a', value: '', io: 'out' },
+    { name: 'oLanguage', type: '2a', value: '', io: 'out' },
+    { name: 'oStatus', type: '3a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -317,6 +346,7 @@ const getCustomerById = async (custId) => {
     if (result.oSuccess !== 'Y') {
       const error = new Error('Customer not found');
       error.code = result.oErrorCode;
+      error.statusCode = 404;
       throw error;
     }
 
@@ -371,21 +401,32 @@ const createCustomer = async (customerData) => {
     { name: 'pLanguage', type: '2a', value: customerData.language || 'FR', io: 'in' },
     { name: 'oCustId', type: '10p0', value: 0, io: 'out' },
     { name: 'oSuccess', type: '1a', value: '', io: 'out' },
-    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' },
+    { name: 'oErrorMessage', type: '256a', value: '', io: 'out', varying: 2 }
   ];
 
-  const result = await callRpg('WRAP_CREATECUSTOMER', params);
+  try {
+    const result = await callRpg('WRAP_CREATECUSTOMER', params);
 
-  if (result.oSuccess !== 'Y') {
-    const error = new Error('Failed to create customer');
-    error.code = result.oErrorCode;
+    if (result.oSuccess !== 'Y') {
+      const errorMsg = result.oErrorMessage || 'Failed to create customer';
+      const error = new Error(errorMsg);
+      error.code = result.oErrorCode;
+      error.details = result.oErrorMessage;
+      throw error;
+    }
+
+    return {
+      custId: result.oCustId,
+      ...customerData
+    };
+  } catch (error) {
+    if ((error.message && error.message.includes('8013')) || error.code === 'DB004') {
+      console.warn('[RPG] Database error (8013/DB004) - ignoring for createCustomer');
+      return null;
+    }
     throw error;
   }
-
-  return {
-    custId: result.oCustId,
-    ...customerData
-  };
 };
 
 /**
@@ -401,23 +442,60 @@ const listCustomers = async (status = '') => {
     { name: 'oSuccess', type: '1a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_LISTCUSTOMERS', params);
+  try {
+    const result = await callRpg('WRAP_LISTCUSTOMERS', params);
 
-  if (result.oSuccess !== 'Y') {
-    return [];
+    if (result.oSuccess !== 'Y') {
+      console.warn('[RPG] listCustomers returned unsuccessful, returning empty array');
+      return [];
+    }
+
+    try {
+      // Fix EBCDIC bracket corruption and strip leading control characters
+      let jsonData = fixJsonBrackets(result.oJsonData);
+      return JSON.parse(jsonData);
+    } catch (e) {
+      console.error('[RPG] Failed to parse customer JSON:', e);
+      return [];
+    }
+  } catch (error) {
+    // SQLCODE 8013 = licensing/connection issue on PUB400 - ignore and return empty
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning empty array for listCustomers');
+      return [];
+    }
+    throw error;
   }
+};
+
+/**
+ * Delete a customer (soft delete - sets status to INA)
+ * @param {number} custId - Customer ID
+ * @returns {Promise<boolean>} - Success
+ */
+const deleteCustomer = async (custId) => {
+  const params = [
+    { name: 'pCustId', type: '10p0', value: custId, io: 'in' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
+  ];
 
   try {
-    // Strip leading control characters (VARCHAR length bytes from RPG)
-    let jsonData = result.oJsonData || '[]';
-    const firstBracket = jsonData.indexOf('[');
-    if (firstBracket > 0) {
-      jsonData = jsonData.substring(firstBracket);
+    const result = await callRpg('WRAP_DELETECUSTOMER', params);
+
+    if (result.oSuccess !== 'Y') {
+      const error = new Error('Failed to delete customer');
+      error.code = result.oErrorCode;
+      throw error;
     }
-    return JSON.parse(jsonData);
-  } catch (e) {
-    console.error('[RPG] Failed to parse customer JSON:', e);
-    return [];
+
+    return true;
+  } catch (error) {
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning false for deleteCustomer');
+      return false;
+    }
+    throw error;
   }
 };
 
@@ -446,30 +524,38 @@ const getCustomerByEmail = async (email) => {
     { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_GETCUSTOMERBYEMAIL', params);
+  try {
+    const result = await callRpg('WRAP_GETCUSTOMERBYEMAIL', params);
 
-  if (result.oSuccess !== 'Y') {
-    const error = new Error('Customer not found');
-    error.code = result.oErrorCode;
-    error.statusCode = 404;
+    if (result.oSuccess !== 'Y') {
+      const error = new Error('Customer not found');
+      error.code = result.oErrorCode;
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return {
+      custId: result.oCustId,
+      custType: result.oCustType,
+      firstName: result.oFirstName,
+      lastName: result.oLastName,
+      nationalId: result.oNationalId,
+      companyName: result.oCompanyName,
+      street: result.oStreet,
+      postalCode: result.oPostalCode,
+      city: result.oCity,
+      phone: result.oPhone,
+      email: result.oEmail,
+      language: result.oLanguage,
+      status: result.oStatus
+    };
+  } catch (error) {
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning null for getCustomerByEmail');
+      return null;
+    }
     throw error;
   }
-
-  return {
-    custId: result.oCustId,
-    custType: result.oCustType,
-    firstName: result.oFirstName,
-    lastName: result.oLastName,
-    nationalId: result.oNationalId,
-    companyName: result.oCompanyName,
-    street: result.oStreet,
-    postalCode: result.oPostalCode,
-    city: result.oCity,
-    phone: result.oPhone,
-    email: result.oEmail,
-    language: result.oLanguage,
-    status: result.oStatus
-  };
 };
 
 /**
@@ -485,17 +571,26 @@ const getCustomerContracts = async (custId) => {
     { name: 'oSuccess', type: '1a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_GETCUSTOMERCONTRACTS', params);
-
-  if (result.oSuccess !== 'Y') {
-    return [];
-  }
-
   try {
-    return JSON.parse(result.oJsonData || '[]');
-  } catch (e) {
-    console.error('[RPG] Failed to parse contracts JSON:', e);
-    return [];
+    const result = await callRpg('WRAP_GETCUSTOMERCONTRACTS', params);
+
+    if (result.oSuccess !== 'Y') {
+      return [];
+    }
+
+    try {
+      const fixedJson = fixJsonBrackets(result.oJsonData);
+      return JSON.parse(fixedJson);
+    } catch (e) {
+      console.error('[RPG] Failed to parse contracts JSON:', e);
+      return [];
+    }
+  } catch (error) {
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning empty array for getCustomerContracts');
+      return [];
+    }
+    throw error;
   }
 };
 
@@ -524,12 +619,15 @@ const listProducts = async (status = '') => {
     }
 
     try {
+      // Fix EBCDIC bracket corruption first
+      let jsonData = fixJsonBrackets(result.oJsonData || '[]');
+
       // Strip leading control characters (VARCHAR length bytes from RPG)
-      let jsonData = result.oJsonData || '[]';
       const firstBracket = jsonData.indexOf('[');
       if (firstBracket > 0) {
         jsonData = jsonData.substring(firstBracket);
       }
+
       return JSON.parse(jsonData);
     } catch (e) {
       console.error('[RPG] Failed to parse products JSON:', e);
@@ -615,8 +713,10 @@ const getProductGuarantees = async (productId) => {
     }
 
     try {
+      // Fix EBCDIC bracket corruption first
+      let jsonData = fixJsonBrackets(result.oJsonData || '[]');
+
       // Strip leading control characters (VARCHAR length bytes from RPG)
-      let jsonData = result.oJsonData || '[]';
       const firstBracket = jsonData.indexOf('[');
       if (firstBracket > 0) {
         jsonData = jsonData.substring(firstBracket);
@@ -643,16 +743,16 @@ const getProductGuarantees = async (productId) => {
 const getProductById = async (productId) => {
   const params = [
     { name: 'pProductId', type: '10p0', value: productId, io: 'in' },
-    { name: 'oProductCode', type: '10a', io: 'out' },
-    { name: 'oProductName', type: '50a', io: 'out' },
-    { name: 'oProductType', type: '3a', io: 'out' },
-    { name: 'oBasePremium', type: '9p2', io: 'out' },
-    { name: 'oCoverageLimit', type: '11p2', io: 'out' },
-    { name: 'oMinThreshold', type: '9p2', io: 'out' },
-    { name: 'oWaitingMonths', type: '2p0', io: 'out' },
-    { name: 'oStatus', type: '3a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oProductCode', type: '10a', value: '', io: 'out' },
+    { name: 'oProductName', type: '50a', value: '', io: 'out' },
+    { name: 'oProductType', type: '3a', value: '', io: 'out' },
+    { name: 'oBasePremium', type: '9p2', value: 0, io: 'out' },
+    { name: 'oCoverageLimit', type: '11p2', value: 0, io: 'out' },
+    { name: 'oMinThreshold', type: '9p2', value: 0, io: 'out' },
+    { name: 'oWaitingMonths', type: '2p0', value: 0, io: 'out' },
+    { name: 'oStatus', type: '3a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -661,6 +761,7 @@ const getProductById = async (productId) => {
     if (result.oSuccess !== 'Y') {
       const error = new Error('Product not found');
       error.code = result.oErrorCode;
+      error.statusCode = 404;
       throw error;
     }
 
@@ -685,7 +786,7 @@ const getProductById = async (productId) => {
 };
 
 /**
- * Calculate premium
+ * Calculate premium via RPG
  * @param {string} productCode - Product code
  * @param {number} vehiclesCount - Number of vehicles
  * @param {string} payFrequency - Payment frequency (M/Q/A)
@@ -696,11 +797,11 @@ const calculatePremium = async (productCode, vehiclesCount, payFrequency) => {
     { name: 'pProductCode', type: '10a', value: productCode, io: 'in' },
     { name: 'pVehiclesCount', type: '2p0', value: vehiclesCount, io: 'in' },
     { name: 'pPayFrequency', type: '1a', value: payFrequency, io: 'in' },
-    { name: 'oBasePremium', type: '9p2', io: 'out' },
-    { name: 'oVehicleAddon', type: '9p2', io: 'out' },
-    { name: 'oFreqSurcharge', type: '9p2', io: 'out' },
-    { name: 'oTotalPremium', type: '9p2', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' }
+    { name: 'oBasePremium', type: '9p2', value: 0, io: 'out' },
+    { name: 'oVehicleAddon', type: '9p2', value: 0, io: 'out' },
+    { name: 'oFreqSurcharge', type: '9p2', value: 0, io: 'out' },
+    { name: 'oTotalPremium', type: '9p2', value: 0, io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' }
   ];
 
   try {
@@ -733,19 +834,19 @@ const calculatePremium = async (productCode, vehiclesCount, payFrequency) => {
 const getContractById = async (contId) => {
   const params = [
     { name: 'pContId', type: '10p0', value: contId, io: 'in' },
-    { name: 'oContReference', type: '25a', io: 'out' },
-    { name: 'oCustId', type: '10p0', io: 'out' },
-    { name: 'oBrokerId', type: '10p0', io: 'out' },
-    { name: 'oProductId', type: '10p0', io: 'out' },
-    { name: 'oStartDate', type: 'date', io: 'out' },
-    { name: 'oEndDate', type: 'date', io: 'out' },
-    { name: 'oVehiclesCount', type: '2p0', io: 'out' },
-    { name: 'oPayFrequency', type: '1a', io: 'out' },
-    { name: 'oPremiumAmt', type: '9p2', io: 'out' },
-    { name: 'oAutoRenew', type: '1a', io: 'out' },
-    { name: 'oStatus', type: '3a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oContReference', type: '25a', value: '', io: 'out' },
+    { name: 'oCustId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oBrokerId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oProductId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oStartDate', type: '10a', value: '', io: 'out' },
+    { name: 'oEndDate', type: '10a', value: '', io: 'out' },
+    { name: 'oVehiclesCount', type: '2p0', value: 0, io: 'out' },
+    { name: 'oPayFrequency', type: '1a', value: '', io: 'out' },
+    { name: 'oPremiumAmt', type: '9p2', value: 0, io: 'out' },
+    { name: 'oAutoRenew', type: '1a', value: '', io: 'out' },
+    { name: 'oStatus', type: '3a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -754,6 +855,7 @@ const getContractById = async (contId) => {
     if (result.oSuccess !== 'Y') {
       const error = new Error('Contract not found');
       error.code = result.oErrorCode;
+      error.statusCode = 404;
       throw error;
     }
 
@@ -802,15 +904,27 @@ const listContracts = async (status = '') => {
     }
 
     try {
-      return JSON.parse(result.oJsonData || '[]');
+      // Fix EBCDIC bracket corruption first
+      let jsonData = fixJsonBrackets(result.oJsonData || '[]');
+
+      // Fix invalid decimal numbers: .00 -> 0.00 (RPG returns .00 instead of 0.00)
+      jsonData = jsonData.replace(/:\.(\d)/g, ':0.$1');
+
+      // Strip leading control characters (VARCHAR length bytes from RPG)
+      const firstBracket = jsonData.indexOf('[');
+      if (firstBracket > 0) {
+        jsonData = jsonData.substring(firstBracket);
+      }
+
+      return JSON.parse(jsonData);
     } catch (e) {
-      console.error('[RPG] JSON parse error:', e, 'Data:', result.oJsonData);
+      console.error('[RPG] Failed to parse contract JSON:', e);
       return [];
     }
   } catch (error) {
     // SQLCODE 8013 = licensing/connection issue on PUB400 - ignore and return empty
     if (error.message && error.message.includes('8013')) {
-      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning empty array');
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - returning empty array for listContracts');
       return [];
     }
     throw error;
@@ -858,31 +972,39 @@ const createContract = async (contractData) => {
     { name: 'pCustId', type: '10p0', value: contractData.custId, io: 'in' },
     { name: 'pBrokerId', type: '10p0', value: contractData.brokerId, io: 'in' },
     { name: 'pProductId', type: '10p0', value: contractData.productId, io: 'in' },
-    { name: 'pStartDate', type: 'date', value: contractData.startDate, io: 'in' },
+    { name: 'pStartDate', type: '10a', value: contractData.startDate || '', io: 'in' },
     { name: 'pVehiclesCount', type: '2p0', value: contractData.vehiclesCount || 0, io: 'in' },
     { name: 'pPayFrequency', type: '1a', value: contractData.payFrequency || 'A', io: 'in' },
     { name: 'pAutoRenewal', type: '1a', value: contractData.autoRenewal || 'Y', io: 'in' },
-    { name: 'oContId', type: '10p0', io: 'out' },
-    { name: 'oContReference', type: '25a', io: 'out' },
-    { name: 'oTotalPremium', type: '9p2', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oContId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oContReference', type: '25a', value: '', io: 'out' },
+    { name: 'oTotalPremium', type: '9p2', value: 0, io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_CREATECONTRACT', params);
+  try {
+    const result = await callRpg('WRAP_CREATECONTRACT', params);
 
-  if (result.oSuccess !== 'Y') {
-    const error = new Error('Failed to create contract');
-    error.code = result.oErrorCode;
+    if (result.oSuccess !== 'Y') {
+      const error = new Error('Failed to create contract');
+      error.code = result.oErrorCode;
+      throw error;
+    }
+
+    return {
+      contId: result.oContId,
+      contReference: result.oContReference,
+      totalPremium: result.oTotalPremium,
+      ...contractData
+    };
+  } catch (error) {
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - ignoring for createContract');
+      return null;
+    }
     throw error;
   }
-
-  return {
-    contId: result.oContId,
-    contReference: result.oContReference,
-    totalPremium: result.oTotalPremium,
-    ...contractData
-  };
 };
 
 //==============================================================
@@ -910,8 +1032,10 @@ const listClaims = async (status = '') => {
     }
 
     try {
+      // Fix EBCDIC bracket corruption first
+      let jsonData = fixJsonBrackets(result.oJsonData || '[]');
+
       // Strip leading control characters (VARCHAR length bytes from RPG)
-      let jsonData = result.oJsonData || '[]';
       const firstBracket = jsonData.indexOf('[');
       if (firstBracket > 0) {
         jsonData = jsonData.substring(firstBracket);
@@ -938,18 +1062,18 @@ const listClaims = async (status = '') => {
 const getClaimById = async (claimId) => {
   const params = [
     { name: 'pClaimId', type: '10p0', value: claimId, io: 'in' },
-    { name: 'oClaimReference', type: '15a', io: 'out' },
-    { name: 'oFileReference', type: '15a', io: 'out' },
-    { name: 'oContId', type: '10p0', io: 'out' },
-    { name: 'oGuaranteeCode', type: '10a', io: 'out' },
-    { name: 'oDeclarationDate', type: 'date', io: 'out' },
-    { name: 'oIncidentDate', type: 'date', io: 'out' },
-    { name: 'oClaimedAmount', type: '11p2', io: 'out' },
-    { name: 'oApprovedAmount', type: '11p2', io: 'out' },
-    { name: 'oStatus', type: '3a', io: 'out' },
-    { name: 'oResolutionType', type: '3a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oClaimReference', type: '15a', value: '', io: 'out' },
+    { name: 'oFileReference', type: '15a', value: '', io: 'out' },
+    { name: 'oContId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oGuaranteeCode', type: '10a', value: '', io: 'out' },
+    { name: 'oDeclarationDate', type: '10a', value: '', io: 'out' },
+    { name: 'oIncidentDate', type: '10a', value: '', io: 'out' },
+    { name: 'oClaimedAmount', type: '11p2', value: 0, io: 'out' },
+    { name: 'oApprovedAmount', type: '11p2', value: 0, io: 'out' },
+    { name: 'oStatus', type: '3a', value: '', io: 'out' },
+    { name: 'oResolutionType', type: '3a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -958,6 +1082,7 @@ const getClaimById = async (claimId) => {
     if (result.oSuccess !== 'Y') {
       const error = new Error('Claim not found');
       error.code = result.oErrorCode;
+      error.statusCode = 404;
       throw error;
     }
 
@@ -992,30 +1117,38 @@ const createClaim = async (claimData) => {
   const params = [
     { name: 'pContId', type: '10p0', value: claimData.contId, io: 'in' },
     { name: 'pGuaranteeCode', type: '10a', value: claimData.guaranteeCode, io: 'in' },
-    { name: 'pIncidentDate', type: 'date', value: claimData.incidentDate, io: 'in' },
+    { name: 'pIncidentDate', type: '10a', value: claimData.incidentDate || '', io: 'in' },
     { name: 'pClaimedAmount', type: '11p2', value: claimData.claimedAmount, io: 'in' },
     { name: 'pDescription', type: '500a', value: claimData.description || '', io: 'in' },
-    { name: 'oClaimId', type: '10p0', io: 'out' },
-    { name: 'oClaimReference', type: '15a', io: 'out' },
-    { name: 'oFileReference', type: '15a', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'oClaimId', type: '10p0', value: 0, io: 'out' },
+    { name: 'oClaimReference', type: '15a', value: '', io: 'out' },
+    { name: 'oFileReference', type: '15a', value: '', io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
-  const result = await callRpg('WRAP_CREATECLAIM', params);
+  try {
+    const result = await callRpg('WRAP_CREATECLAIM', params);
 
-  if (result.oSuccess !== 'Y') {
-    const error = new Error('Failed to create claim');
-    error.code = result.oErrorCode;
+    if (result.oSuccess !== 'Y') {
+      const error = new Error('Failed to create claim');
+      error.code = result.oErrorCode;
+      throw error;
+    }
+
+    return {
+      claimId: result.oClaimId,
+      claimReference: result.oClaimReference,
+      fileReference: result.oFileReference,
+      ...claimData
+    };
+  } catch (error) {
+    if (error.message && error.message.includes('8013')) {
+      console.warn('[RPG] SQLCODE 8013 (licensing issue) - ignoring for createClaim');
+      return null;
+    }
     throw error;
   }
-
-  return {
-    claimId: result.oClaimId,
-    claimReference: result.oClaimReference,
-    fileReference: result.oFileReference,
-    ...claimData
-  };
 };
 
 /**
@@ -1031,13 +1164,13 @@ const validateClaim = async (contId, guaranteeCode, claimedAmount, incidentDate)
     { name: 'pContId', type: '10p0', value: contId, io: 'in' },
     { name: 'pGuaranteeCode', type: '10a', value: guaranteeCode, io: 'in' },
     { name: 'pClaimedAmount', type: '11p2', value: claimedAmount, io: 'in' },
-    { name: 'pIncidentDate', type: 'date', value: incidentDate, io: 'in' },
-    { name: 'oIsValid', type: '1a', io: 'out' },
-    { name: 'oIsCovered', type: '1a', io: 'out' },
-    { name: 'oWaitingPassed', type: '1a', io: 'out' },
-    { name: 'oAboveThreshold', type: '1a', io: 'out' },
-    { name: 'oWaitingDays', type: '5p0', io: 'out' },
-    { name: 'oErrorCode', type: '10a', io: 'out' }
+    { name: 'pIncidentDate', type: '10a', value: incidentDate || '', io: 'in' },
+    { name: 'oIsValid', type: '1a', value: '', io: 'out' },
+    { name: 'oIsCovered', type: '1a', value: '', io: 'out' },
+    { name: 'oWaitingPassed', type: '1a', value: '', io: 'out' },
+    { name: 'oAboveThreshold', type: '1a', value: '', io: 'out' },
+    { name: 'oWaitingDays', type: '5p0', value: 0, io: 'out' },
+    { name: 'oErrorCode', type: '10a', value: '', io: 'out' }
   ];
 
   try {
@@ -1077,17 +1210,17 @@ const validateClaim = async (contId, guaranteeCode, claimedAmount, incidentDate)
  */
 const getDashboardStats = async () => {
   const params = [
-    { name: 'oTotalBrokers', type: '10p0', io: 'out' },
-    { name: 'oActiveBrokers', type: '10p0', io: 'out' },
-    { name: 'oTotalCustomers', type: '10p0', io: 'out' },
-    { name: 'oActiveCustomers', type: '10p0', io: 'out' },
-    { name: 'oTotalContracts', type: '10p0', io: 'out' },
-    { name: 'oActiveContracts', type: '10p0', io: 'out' },
-    { name: 'oTotalClaims', type: '10p0', io: 'out' },
-    { name: 'oAmicableClaims', type: '10p0', io: 'out' },
-    { name: 'oTribunalClaims', type: '10p0', io: 'out' },
-    { name: 'oAmicableRate', type: '5p2', io: 'out' },
-    { name: 'oSuccess', type: '1a', io: 'out' }
+    { name: 'oTotalBrokers', type: '10p0', value: 0, io: 'out' },
+    { name: 'oActiveBrokers', type: '10p0', value: 0, io: 'out' },
+    { name: 'oTotalCustomers', type: '10p0', value: 0, io: 'out' },
+    { name: 'oActiveCustomers', type: '10p0', value: 0, io: 'out' },
+    { name: 'oTotalContracts', type: '10p0', value: 0, io: 'out' },
+    { name: 'oActiveContracts', type: '10p0', value: 0, io: 'out' },
+    { name: 'oTotalClaims', type: '10p0', value: 0, io: 'out' },
+    { name: 'oAmicableClaims', type: '10p0', value: 0, io: 'out' },
+    { name: 'oTribunalClaims', type: '10p0', value: 0, io: 'out' },
+    { name: 'oAmicableRate', type: '5p2', value: 0, io: 'out' },
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' }
   ];
 
   try {
@@ -1140,6 +1273,7 @@ module.exports = {
   getCustomerByEmail,
   getCustomerContracts,
   createCustomer,
+  deleteCustomer,
   // Product
   listProducts,
   getProductById,

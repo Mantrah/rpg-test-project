@@ -1,11 +1,10 @@
 /**
  * Customer Controller
  * HTTP request handlers for customer endpoints
- * Uses RPG backend via iToolkit for business operations
+ * All operations go through RPG backend via iToolkit
  */
 
 const rpgConnector = require('../config/rpgConnector');
-const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { CUSTOMER_TYPE, STATUS } = require('../config/constants');
@@ -17,8 +16,15 @@ const { CUSTOMER_TYPE, STATUS } = require('../config/constants');
 const createCustomer = asyncHandler(async (req, res) => {
   const customerData = req.body;
 
-  // Validate customer type
-  if (!CUSTOMER_TYPE[customerData.custType]) {
+  // DEBUG: Log received data
+  console.log('[DEBUG] Received body:', JSON.stringify(customerData));
+  console.log('[DEBUG] custType value:', customerData.custType);
+  console.log('[DEBUG] custType type:', typeof customerData.custType);
+  console.log('[DEBUG] Valid types:', Object.values(CUSTOMER_TYPE));
+
+  // Validate customer type (IND or BUS)
+  const validTypes = Object.values(CUSTOMER_TYPE);
+  if (!validTypes.includes(customerData.custType)) {
     return res.status(400).json({
       success: false,
       error: {
@@ -56,7 +62,7 @@ const createCustomer = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get all customers - SQL read-only
+ * Get all customers via RPG
  * GET /api/customers?status=ACT
  */
 const getAllCustomers = asyncHandler(async (req, res) => {
@@ -73,14 +79,7 @@ const getAllCustomers = asyncHandler(async (req, res) => {
     });
   }
 
-  let sql = 'SELECT * FROM CUSTOMER';
-  const params = [];
-  if (status) {
-    sql += ' WHERE STATUS = ?';
-    params.push(status);
-  }
-  sql += ' ORDER BY LAST_NAME, FIRST_NAME';
-  const customers = await query(sql, params);
+  const customers = await rpgConnector.listCustomers(status || '');
   res.json(success(customers));
 });
 
@@ -106,7 +105,7 @@ const getCustomerById = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get customer by email - SQL read-only
+ * Get customer by email via RPG
  * GET /api/customers/email/:email
  */
 const getCustomerByEmail = asyncHandler(async (req, res) => {
@@ -122,18 +121,12 @@ const getCustomerByEmail = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = 'SELECT * FROM CUSTOMER WHERE EMAIL = ?';
-  const result = await query(sql, [email]);
-  if (!result || result.length === 0) {
-    const error = new Error('Customer not found');
-    error.statusCode = 404;
-    throw error;
-  }
-  res.json(success(result[0]));
+  const customer = await rpgConnector.getCustomerByEmail(email);
+  res.json(success(customer));
 });
 
 /**
- * Get customer contracts - SQL read-only
+ * Get customer contracts via RPG
  * GET /api/customers/:id/contracts
  */
 const getCustomerContracts = asyncHandler(async (req, res) => {
@@ -149,9 +142,29 @@ const getCustomerContracts = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = 'SELECT * FROM CONTRACT WHERE CUST_ID = ? ORDER BY START_DATE DESC';
-  const contracts = await query(sql, [custId]);
+  const contracts = await rpgConnector.getCustomerContracts(custId);
   res.json(success(contracts));
+});
+
+/**
+ * Delete customer via RPG (soft delete)
+ * DELETE /api/customers/:id
+ */
+const deleteCustomer = asyncHandler(async (req, res) => {
+  const custId = parseInt(req.params.id, 10);
+
+  if (isNaN(custId)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VAL001',
+        message: 'Invalid customer ID format.'
+      }
+    });
+  }
+
+  await rpgConnector.deleteCustomer(custId);
+  res.json(success(null, 'Customer deleted successfully'));
 });
 
 module.exports = {
@@ -159,5 +172,6 @@ module.exports = {
   getAllCustomers,
   getCustomerById,
   getCustomerByEmail,
-  getCustomerContracts
+  getCustomerContracts,
+  deleteCustomer
 };

@@ -8,7 +8,7 @@ const CustomerList = () => {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['customers'],
-    queryFn: customerApi.list,
+    queryFn: () => customerApi.getAll(),
   })
 
   const deleteMutation = useMutation({

@@ -166,7 +166,7 @@ const ContractList = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        €{parseFloat(contract.TOTAL_PREMIUM).toFixed(2)}
+                        €{parseFloat(contract.PREMIUM_AMT || 0).toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500">
                         {contract.PAY_FREQUENCY === 'M' && 'Mensuel'}

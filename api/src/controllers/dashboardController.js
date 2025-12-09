@@ -1,11 +1,10 @@
 /**
  * Dashboard Controller
  * HTTP request handlers for dashboard endpoints
- * Uses RPG backend via iToolkit for main stats, SQL for read-only details
+ * ALL data access goes through RPG via rpgConnector
  */
 
 const rpgConnector = require('../config/rpgConnector');
-const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 
@@ -19,99 +18,91 @@ const getDashboardStats = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get broker statistics - SQL read-only
+ * Get broker statistics via RPG
  * GET /api/dashboard/brokers
  */
 const getBrokerStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT COUNT(*) AS TOTAL, SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END) AS ACTIVE
-    FROM BROKER
-  `;
-  const result = await query(sql);
-  res.json(success({ total: result[0].TOTAL, active: result[0].ACTIVE }));
-});
-
-/**
- * Get customer statistics - SQL read-only
- * GET /api/dashboard/customers
- */
-const getCustomerStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT COUNT(*) AS TOTAL, SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END) AS ACTIVE
-    FROM CUSTOMER
-  `;
-  const result = await query(sql);
-  res.json(success({ total: result[0].TOTAL, active: result[0].ACTIVE }));
-});
-
-/**
- * Get contract statistics - SQL read-only
- * GET /api/dashboard/contracts
- */
-const getContractStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT COUNT(*) AS TOTAL, SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END) AS ACTIVE
-    FROM CONTRACT
-  `;
-  const result = await query(sql);
-  res.json(success({ total: result[0].TOTAL, active: result[0].ACTIVE }));
-});
-
-/**
- * Get claim statistics - SQL read-only
- * GET /api/dashboard/claims
- */
-const getClaimStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT
-      COUNT(*) AS TOTAL,
-      SUM(CASE WHEN RESOLUTION_TYPE = 'AMI' THEN 1 ELSE 0 END) AS AMICABLE,
-      SUM(CASE WHEN RESOLUTION_TYPE = 'TRI' THEN 1 ELSE 0 END) AS TRIBUNAL
-    FROM CLAIM
-  `;
-  const result = await query(sql);
-  const stats = result[0];
-  const totalResolved = (stats.AMICABLE || 0) + (stats.TRIBUNAL || 0);
-  const amicableRate = totalResolved > 0 ? Math.round((stats.AMICABLE / totalResolved) * 100) : 0;
+  const stats = await rpgConnector.getDashboardStats();
   res.json(success({
-    total: stats.TOTAL,
-    amicable: stats.AMICABLE,
-    tribunal: stats.TRIBUNAL,
-    amicableRate,
-    amicableRateTarget: 79
+    total: stats.brokers.total,
+    active: stats.brokers.active
   }));
 });
 
 /**
- * Get revenue statistics - SQL read-only
- * GET /api/dashboard/revenue
+ * Get customer statistics via RPG
+ * GET /api/dashboard/customers
  */
-const getRevenueStats = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT SUM(PREMIUM_AMOUNT) AS TOTAL_PREMIUM
-    FROM CONTRACT WHERE STATUS = 'ACT'
-  `;
-  const result = await query(sql);
-  res.json(success({ totalPremium: parseFloat(result[0].TOTAL_PREMIUM || 0) }));
+const getCustomerStats = asyncHandler(async (req, res) => {
+  const stats = await rpgConnector.getDashboardStats();
+  res.json(success({
+    total: stats.customers.total,
+    active: stats.customers.active
+  }));
 });
 
 /**
- * Get claims by status (for pie chart) - SQL read-only
+ * Get contract statistics via RPG
+ * GET /api/dashboard/contracts
+ */
+const getContractStats = asyncHandler(async (req, res) => {
+  const stats = await rpgConnector.getDashboardStats();
+  res.json(success({
+    total: stats.contracts.total,
+    active: stats.contracts.active
+  }));
+});
+
+/**
+ * Get claim statistics via RPG
+ * GET /api/dashboard/claims
+ */
+const getClaimStats = asyncHandler(async (req, res) => {
+  const stats = await rpgConnector.getDashboardStats();
+  res.json(success({
+    total: stats.claims.total,
+    amicable: stats.claims.amicableResolutions,
+    tribunal: stats.claims.tribunalResolutions,
+    amicableRate: stats.claims.amicableRate,
+    amicableRateTarget: stats.claims.amicableRateTarget
+  }));
+});
+
+/**
+ * Get revenue statistics via RPG
+ * GET /api/dashboard/revenue
+ */
+const getRevenueStats = asyncHandler(async (req, res) => {
+  // Get contracts and sum premiums
+  const contracts = await rpgConnector.listContracts('ACT');
+  const totalPremium = contracts.reduce((sum, c) => sum + (parseFloat(c.PREMIUM_AMT) || 0), 0);
+  res.json(success({ totalPremium }));
+});
+
+/**
+ * Get claims by status via RPG
  * GET /api/dashboard/claims-by-status
  */
 const getClaimsByStatus = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT STATUS, COUNT(*) AS COUNT
-    FROM CLAIM
-    GROUP BY STATUS
-    ORDER BY COUNT DESC
-  `;
-  const result = await query(sql);
+  const claims = await rpgConnector.listClaims('');
+
+  // Group by status
+  const statusCounts = {};
+  claims.forEach(claim => {
+    const status = claim.STATUS || 'UNK';
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  });
+
+  // Convert to array format
+  const result = Object.entries(statusCounts)
+    .map(([STATUS, COUNT]) => ({ STATUS, COUNT }))
+    .sort((a, b) => b.COUNT - a.COUNT);
+
   res.json(success(result));
 });
 
 /**
- * Get recent claims - SQL read-only
+ * Get recent claims via RPG
  * GET /api/dashboard/recent-claims?limit=5
  */
 const getRecentClaims = asyncHandler(async (req, res) => {
@@ -127,26 +118,40 @@ const getRecentClaims = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = `SELECT * FROM CLAIM ORDER BY DECLARATION_DATE DESC FETCH FIRST ${limit} ROWS ONLY`;
-  const claims = await query(sql);
-  res.json(success(claims));
+  const claims = await rpgConnector.listClaims('');
+  // Claims are already sorted by DECLARATION_DATE DESC from RPG
+  const recentClaims = claims.slice(0, limit);
+  res.json(success(recentClaims));
 });
 
 /**
- * Get top products - SQL read-only
+ * Get top products via RPG
  * GET /api/dashboard/top-products
  */
 const getTopProducts = asyncHandler(async (req, res) => {
-  const sql = `
-    SELECT P.PRODUCT_CODE, P.PRODUCT_NAME, COUNT(C.CONT_ID) AS CONTRACT_COUNT
-    FROM PRODUCT P
-    LEFT JOIN CONTRACT C ON P.PRODUCT_ID = C.PRODUCT_ID
-    GROUP BY P.PRODUCT_ID, P.PRODUCT_CODE, P.PRODUCT_NAME
-    ORDER BY CONTRACT_COUNT DESC
-    FETCH FIRST 5 ROWS ONLY
-  `;
-  const products = await query(sql);
-  res.json(success(products));
+  const [products, contracts] = await Promise.all([
+    rpgConnector.listProducts('ACT'),
+    rpgConnector.listContracts('')
+  ]);
+
+  // Count contracts per product
+  const productCounts = {};
+  contracts.forEach(contract => {
+    const productId = contract.PRODUCT_ID;
+    productCounts[productId] = (productCounts[productId] || 0) + 1;
+  });
+
+  // Map products with contract counts
+  const result = products
+    .map(p => ({
+      PRODUCT_CODE: p.PRODUCT_CODE,
+      PRODUCT_NAME: p.PRODUCT_NAME,
+      CONTRACT_COUNT: productCounts[p.PRODUCT_ID] || 0
+    }))
+    .sort((a, b) => b.CONTRACT_COUNT - a.CONTRACT_COUNT)
+    .slice(0, 5);
+
+  res.json(success(result));
 });
 
 module.exports = {

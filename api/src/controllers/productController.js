@@ -1,22 +1,20 @@
 /**
  * Product Controller
  * HTTP request handlers for product endpoints
- * Uses RPG backend via iToolkit for business operations
+ * ALL data access goes through RPG via rpgConnector
  */
 
 const rpgConnector = require('../config/rpgConnector');
-const { query } = require('../config/database');
 const { success } = require('../utils/responseFormatter');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { PAYMENT_FREQUENCY } = require('../config/constants');
 
 /**
- * Get all products - SQL read-only
+ * Get all products via RPG
  * GET /api/products
  */
 const getAllProducts = asyncHandler(async (req, res) => {
-  const sql = 'SELECT * FROM PRODUCT WHERE STATUS = \'ACT\' ORDER BY PRODUCT_NAME';
-  const products = await query(sql);
+  const products = await rpgConnector.listProducts('ACT');
   res.json(success(products));
 });
 
@@ -42,7 +40,7 @@ const getProductById = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get product by code - SQL read-only
+ * Get product by code via RPG
  * GET /api/products/code/:code
  */
 const getProductByCode = asyncHandler(async (req, res) => {
@@ -58,18 +56,12 @@ const getProductByCode = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = 'SELECT * FROM PRODUCT WHERE PRODUCT_CODE = ?';
-  const result = await query(sql, [code.toUpperCase()]);
-  if (!result || result.length === 0) {
-    const error = new Error('Product not found');
-    error.statusCode = 404;
-    throw error;
-  }
-  res.json(success(result[0]));
+  const product = await rpgConnector.getProductByCode(code.toUpperCase());
+  res.json(success(product));
 });
 
 /**
- * Get product guarantees - SQL read-only
+ * Get product guarantees via RPG
  * GET /api/products/:id/guarantees
  */
 const getProductGuarantees = asyncHandler(async (req, res) => {
@@ -85,14 +77,7 @@ const getProductGuarantees = asyncHandler(async (req, res) => {
     });
   }
 
-  const sql = `
-    SELECT PG.*, G.GUARANTEE_NAME, G.DESCRIPTION
-    FROM PRODUCT_GUARANTEE PG
-    JOIN GUARANTEE G ON PG.GUARANTEE_CODE = G.GUARANTEE_CODE
-    WHERE PG.PRODUCT_ID = ?
-    ORDER BY G.GUARANTEE_NAME
-  `;
-  const guarantees = await query(sql, [productId]);
+  const guarantees = await rpgConnector.getProductGuarantees(productId);
   res.json(success(guarantees));
 });
 
@@ -126,8 +111,8 @@ const calculatePremium = asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate payment frequency
-  if (!PAYMENT_FREQUENCY[payFrequency]) {
+  // Validate payment frequency (check values: A, Q, M)
+  if (!Object.values(PAYMENT_FREQUENCY).includes(payFrequency)) {
     return res.status(400).json({
       success: false,
       error: {

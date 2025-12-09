@@ -38,7 +38,8 @@ dcl-proc PRODSRV_GetProduct export;
             FROM PRODUCT
             WHERE PRODUCT_ID = :pProductId;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear product;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -78,7 +79,8 @@ dcl-proc PRODSRV_GetProductByCode export;
             FROM PRODUCT
             WHERE PRODUCT_CODE = :pProductCode;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             clear product;
             if sqlcode = 100;
                 ERRUTIL_addErrorCode('DB001');
@@ -179,11 +181,12 @@ dcl-proc PRODSRV_CalculateBasePremium export;
         // Business logic - Get base premium
         exec sql
             SELECT BASE_PREMIUM INTO :basePremium
-            FROM PRODUCT
+            FROM MRS1.PRODUCT
             WHERE PRODUCT_CODE = :pProductCode
               AND STATUS = 'ACT';
 
-        if sqlcode = 0;
+        // SQLCODE 8013 = PUB400 licensing - ignore and continue
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             // Add vehicle surcharge
             if pVehiclesCount > 0;
                 vehicleAddon = pVehiclesCount * VEHICLE_ADDON;
@@ -283,7 +286,8 @@ dcl-proc PRODSRV_GetGuaranteeWaitingPeriod export;
             WHERE G.PRODUCT_ID = :pProductId
               AND G.GUARANTEE_CODE = :pGuaranteeCode;
 
-        if sqlcode <> 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
             waitingMonths = 3;  // Default 3 months
         endif;
 
