@@ -85,3 +85,8 @@ dcl-pr BROKRSRV_ListBrokersJson int(10);
     pStatusFilter   char(3) const;
     pJsonData       varchar(32000);
 end-pr;
+
+dcl-pr BROKRSRV_CountStats;
+    oTotal          packed(10:0);
+    oActive         packed(10:0);
+end-pr;

@@ -20,19 +20,19 @@ Impressionner DAS Belgium en démontrant :
 │  React Frontend  │  ← UI moderne (7 pages, 2 workflows)
 │  (Vite + React)  │     Tourne sur PC local
 └────────┬─────────┘
-         │ SSH Tunnel (port 8085)
+         │ SSH Tunnel (port 8090)
          ↓
 ┌──────────────────────────────────────────────────┐
 │                 IBM i (PUB400)                    │
 │  ┌──────────────────┐                             │
 │  │   Node.js API    │  ← REST API (Express)       │
-│  │ (Express + PASE) │     Port 8085               │
+│  │ (Express + PASE) │     Port 8090               │
 │  └────────┬─────────┘                             │
 │           │ iToolkit/XMLSERVICE                   │
 │           ↓                                       │
 │  ┌──────────────────┐     ┌──────────────────┐    │
-│  │   RPGWRAP.PGM    │────▶│  RPG Services    │    │
-│  │  (SQL Wrapper)   │     │  BROKRSRV,etc    │    │
+│  │    RPGWRAP       │────▶│  RPG Services    │    │
+│  │ (iToolkit/WRAP)  │     │  BROKRSRV,etc    │    │
 │  └──────────────────┘     └────────┬─────────┘    │
 │                                    │              │
 │                                    ↓              │
@@ -43,7 +43,7 @@ Impressionner DAS Belgium en démontrant :
 └───────────────────────────────────────────────────┘
 ```
 
-**Architecture** : Node.js appelle les programmes RPG via iToolkit/XMLSERVICE. RPGWRAP.PGM sert de wrapper SQL pour les services RPG (BROKRSRV, CUSTSRV, PRODSRV, CONTSRV, CLAIMSRV). **Aucun accès SQL direct depuis Node.js** - toutes les requêtes DB2 passent par les service programs RPG.
+**Architecture** : Node.js appelle les programmes RPG via iToolkit/XMLSERVICE. RPGWRAP sert de couche wrapper iToolkit convertissant les paramètres scalaires vers/depuis les Data Structures RPG. Pour les opérations CRUD, RPGWRAP délègue aux services business (*SRV) qui contiennent le SQL. Pour les listes JSON, RPGWRAP génère directement le JSON via curseurs SQL. **Aucun accès SQL direct depuis Node.js** - toutes les requêtes DB2 passent par les programmes RPG.
 
 ## 📦 Structure du Projet
 
@@ -83,6 +83,8 @@ rpg-test-project/
 │   │   ├── routes/               # 6 route files
 │   │   ├── middleware/
 │   │   └── app.js                # Express server
+│   ├── tests/
+│   │   └── validation-tests.js   # Post-deployment validation tests
 │   ├── package.json
 │   ├── .env.example
 │   └── README.md
@@ -143,7 +145,7 @@ npm install
 
 ```powershell
 # Tunnel SSH pour accéder à l'API depuis votre PC
-plink -ssh -P 2222 MRS@pub400.com -L 8085:localhost:8085 -N
+plink -ssh -P 2222 MRS@pub400.com -L 8090:localhost:8090 -N
 ```
 
 ### 4. Démarrer Backend API (sur IBM i)
@@ -154,7 +156,7 @@ cd /home/MRS/DAS/api
 npm start
 ```
 
-API disponible via tunnel sur `http://localhost:8085`
+API disponible via tunnel sur `http://localhost:8090`
 
 ### 5. Démarrer Frontend (local)
 
@@ -320,10 +322,19 @@ Data Access (DB2)
 - **iToolkit** - Appels programmes RPG via XMLSERVICE
 - **Note technique** : Les paramètres VARCHAR nécessitent `varying: 2` pour iToolkit (préfixe 2 octets)
 
+### Gestion Erreur SQLCODE 8013 (PUB400)
+- **Pas de mock data** - Ce projet n'utilise aucune donnée simulée
+- **SQLCODE 8013** (limitation licensing PUB400) est ignoré silencieusement
+- Les fonctions `list*` retournent un tableau vide `[]`
+- Les fonctions `get*` et `create*` retournent `null`
+- L'UI affiche simplement un tableau vide ou un message approprié
+
 ## 📚 Documentation Complète
 
 - **[docs/DAS-BELGIUM-RESEARCH.md](docs/DAS-BELGIUM-RESEARCH.md)** - Recherche entreprise + tech + interview prep
 - **[docs/implementation-plan.md](docs/implementation-plan.md)** - Plan détaillé du projet
+- **[docs/TECHNICAL-FIXES.md](docs/TECHNICAL-FIXES.md)** - Fixes techniques iToolkit/RPG (important pour debug)
+- **[docs/PUB400-PROCEDURES.md](docs/PUB400-PROCEDURES.md)** - Procédures de communication avec PUB400 (SSH, FTP, SBMJOB)
 - **[api/README.md](api/README.md)** - Documentation API (37 endpoints)
 - **[ui/README.md](ui/README.md)** - Documentation Frontend (5 pages)
 - **[docs/program/](docs/program/)** - Documentation 5 RPG programs
@@ -352,6 +363,74 @@ Data Access (DB2)
 1. "Utilisez-vous encore IBM i en production pour le core business ?"
 2. "Le KPI 79% amiable est-il mesuré par garantie ou globalement ?"
 3. "TELEBIB2 évolue-t-il vers JSON/REST ou reste EDIFACT ?"
+
+## 🧪 Tests de Validation Post-Déploiement
+
+Suite de tests automatisés à exécuter après chaque déploiement pour vérifier que toutes les fonctionnalités critiques fonctionnent.
+
+### Exécution
+
+```bash
+# Depuis Windows (avec tunnel SSH actif sur port 8090)
+node api/tests/validation-tests.js
+
+# Avec URL personnalisée
+node api/tests/validation-tests.js --api-url=http://localhost:8090
+```
+
+### Fonctionnalités Testées
+
+| Entity | Tests |
+|--------|-------|
+| **Broker** | List, Get by ID, Create, Delete |
+| **Customer** | List, Get by ID, Get by Email, Get Contracts, Create (IND), Delete |
+| **Product** | List, Get by ID, Get by Code, Get Guarantees, Calculate Premium |
+| **Contract** | List, Get by ID, Calculate Premium |
+| **Claim** | List, Get by ID, Stats, Validate |
+| **Dashboard** | Get Stats |
+
+### Workflow Développement
+
+```
+1. Correctif code (RPG, Node.js, ou UI)
+       ↓
+2. Vérification layer-alignment-check (via skill Claude)
+       ↓
+3. Push vers IBM i (pscp + compilation RPG si nécessaire)
+       ↓
+4. Attente reboot API (SBMJOB ou kill/restart node)
+       ↓
+5. Lancement tests validation
+       ↓
+6. Commit si tous tests passent ✓
+```
+
+### Résultat Attendu
+
+```
+╔════════════════════════════════════════════╗
+║     POST-DEPLOYMENT VALIDATION TESTS       ║
+╚════════════════════════════════════════════╝
+
+API URL: http://localhost:8090/api
+API is reachable
+
+=== BROKER TESTS ===
+  ✓ List Brokers
+  ✓ Get Broker by ID
+  ✓ Create Broker - ID=123
+  ✓ Delete Broker
+
+[... autres entités ...]
+
+════════════════════════════════════════════
+SUMMARY
+════════════════════════════════════════════
+  Passed: 23
+  Failed: 0
+
+ALL TESTS PASSED!
+```
 
 ## 🚧 Améliorations Post-MVP
 

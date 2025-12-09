@@ -298,9 +298,16 @@ dcl-proc WRAP_CreateCustomer export;
     customer.lastName = pLastName;
     customer.nationalId = pNationalId;
     // Convert char(10) ISO date to RPG date
-    if %trim(pBirthDate) <> '' and %trim(pBirthDate) <> '1900-01-01';
-        customer.birthDate = %date(%trim(pBirthDate):*iso);
-    endif;
+    // Use %date() BIF for safe conversion - default to current date if empty/invalid
+    monitor;
+        if %trim(pBirthDate) <> '';
+            customer.birthDate = %date(%trim(pBirthDate):*iso);
+        else;
+            customer.birthDate = %date();  // Current date as default
+        endif;
+    on-error;
+        customer.birthDate = %date();  // Current date on error
+    endmon;
     customer.companyName = pCompanyName;
     customer.vatNumber = pVatNumber;
     customer.street = pStreet;
@@ -327,6 +334,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // ListCustomers : List customers and return JSON array
+// Delegates to CUSTSRV_ListCustomersJson for proper SQL context
 //--------------------------------------------------------------
 dcl-proc WRAP_ListCustomers export;
     dcl-pi *n;
@@ -337,85 +345,9 @@ dcl-proc WRAP_ListCustomers export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s statusFilter char(3);
-    dcl-s jsonRow varchar(800);
-    dcl-s custId packed(10:0);
-    dcl-s custType char(3);
-    dcl-s firstName char(50);
-    dcl-s lastName char(50);
-    dcl-s nationalId char(15);
-    dcl-s companyName char(100);
-    dcl-s street char(30);
-    dcl-s postalCode char(7);
-    dcl-s city char(24);
-    dcl-s phone char(20);
-    dcl-s email char(100);
-    dcl-s language char(2);
-    dcl-s custStatus char(3);
-    dcl-s firstRow ind inz(*on);
-
-    exec sql
-        DECLARE C_CUSTOMERS CURSOR FOR
-        SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
-               COMPANY_NAME, STREET, POSTAL_CODE, CITY, PHONE, EMAIL,
-               LANGUAGE, STATUS
-        FROM MRS1.CUSTOMER
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
-        ORDER BY LAST_NAME, FIRST_NAME;
-
     monitor;
-        statusFilter = %trim(pStatus);
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_CUSTOMERS;
-
-        // SQLCODE 8013 = PUB400 licensing - ignore and return empty
-        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
-            oJsonData = '[]';
-            oSuccess = 'Y';
-            return;
-        endif;
-
-        exec sql
-            FETCH C_CUSTOMERS INTO :custId, :custType, :firstName, :lastName,
-                :nationalId, :companyName, :street, :postalCode, :city,
-                :phone, :email, :language, :custStatus;
-
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            jsonRow = '{"CUST_ID":' + %char(custId) +
-                ',"CUST_TYPE":"' + %trim(custType) +
-                '","FIRST_NAME":"' + %trim(firstName) +
-                '","LAST_NAME":"' + %trim(lastName) +
-                '","NATIONAL_ID":"' + %trim(nationalId) +
-                '","COMPANY_NAME":"' + %trim(companyName) +
-                '","STREET":"' + %trim(street) +
-                '","POSTAL_CODE":"' + %trim(postalCode) +
-                '","CITY":"' + %trim(city) +
-                '","PHONE":"' + %trim(phone) +
-                '","EMAIL":"' + %trim(email) +
-                '","LANGUAGE":"' + %trim(language) +
-                '","STATUS":"' + %trim(custStatus) + '"}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_CUSTOMERS INTO :custId, :custType, :firstName, :lastName,
-                    :nationalId, :companyName, :street, :postalCode, :city,
-                    :phone, :email, :language, :custStatus;
-        enddo;
-
-        exec sql CLOSE C_CUSTOMERS;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = CUSTSRV_ListCustomersJson(pStatus: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -451,6 +383,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // GetCustomerByEmail : Get customer by email address
+// Delegates to CUSTSRV_GetCustomerByEmail for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_GetCustomerByEmail export;
     dcl-pi *n;
@@ -473,54 +406,49 @@ dcl-proc WRAP_GetCustomerByEmail export;
         oErrorCode      char(10);
     end-pi;
 
-    dcl-s emailFilter char(100);
+    dcl-ds customer likeds(Customer_t);
 
-    monitor;
-        emailFilter = %trim(pEmail);
+    ERRUTIL_init();
+    customer = CUSTSRV_GetCustomerByEmail(%trim(pEmail));
 
-        exec sql
-            SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
-                   COMPANY_NAME, STREET, POSTAL_CODE, CITY, PHONE, EMAIL,
-                   LANGUAGE, STATUS
-            INTO :oCustId, :oCustType, :oFirstName, :oLastName, :oNationalId,
-                 :oCompanyName, :oStreet, :oPostalCode, :oCity, :oPhone,
-                 :oEmail, :oLanguage, :oStatus
-            FROM MRS1.CUSTOMER
-            WHERE EMAIL = :emailFilter;
-
-        // Treat SQLCODE 8013 (PUB400 licensing) as success
-        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            oSuccess = 'Y';
-            oErrorCode = '';
-        elseif sqlcode = 100;
-            clear oCustId;
-            clear oCustType;
-            clear oFirstName;
-            clear oLastName;
-            clear oNationalId;
-            clear oCompanyName;
-            clear oStreet;
-            clear oPostalCode;
-            clear oCity;
-            clear oPhone;
-            clear oEmail;
-            clear oLanguage;
-            clear oStatus;
-            oSuccess = 'N';
-            oErrorCode = 'DB001';
-        else;
-            oSuccess = 'N';
-            oErrorCode = 'DB004';
-        endif;
-
-    on-error;
+    if customer.custId > 0;
+        oCustId = customer.custId;
+        oCustType = customer.custType;
+        oFirstName = customer.firstName;
+        oLastName = customer.lastName;
+        oNationalId = customer.nationalId;
+        oCompanyName = customer.companyName;
+        oStreet = customer.street;
+        oPostalCode = customer.postalCode;
+        oCity = customer.city;
+        oPhone = customer.phone;
+        oEmail = customer.email;
+        oLanguage = customer.language;
+        oStatus = customer.status;
+        oSuccess = 'Y';
+        oErrorCode = '';
+    else;
+        clear oCustId;
+        clear oCustType;
+        clear oFirstName;
+        clear oLastName;
+        clear oNationalId;
+        clear oCompanyName;
+        clear oStreet;
+        clear oPostalCode;
+        clear oCity;
+        clear oPhone;
+        clear oEmail;
+        clear oLanguage;
+        clear oStatus;
         oSuccess = 'N';
-        oErrorCode = 'EXEC_ERR';
-    endmon;
+        oErrorCode = ERRUTIL_getLastErrorCode();
+    endif;
 end-proc;
 
 //--------------------------------------------------------------
 // GetCustomerContracts : Get contracts for a customer (JSON)
+// Delegates to CONTSRV_GetCustomerContractsJson for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_GetCustomerContracts export;
     dcl-pi *n;
@@ -531,74 +459,9 @@ dcl-proc WRAP_GetCustomerContracts export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s jsonRow varchar(500);
-    dcl-s contId packed(10:0);
-    dcl-s contReference char(25);
-    dcl-s brokerId packed(10:0);
-    dcl-s productId packed(10:0);
-    dcl-s startDate date;
-    dcl-s endDate date;
-    dcl-s premiumAmt packed(9:2);
-    dcl-s contStatus char(3);
-    dcl-s firstRow ind inz(*on);
-    dcl-s startDateStr char(10);
-    dcl-s endDateStr char(10);
-
-    exec sql
-        DECLARE C_CUST_CONTRACTS CURSOR FOR
-        SELECT CONT_ID, CONT_REFERENCE, BROKER_ID, PRODUCT_ID,
-               START_DATE, END_DATE, PREMIUM_AMT, STATUS
-        FROM MRS1.CONTRACT
-        WHERE CUST_ID = :pCustId
-        ORDER BY START_DATE DESC;
-
     monitor;
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_CUST_CONTRACTS;
-
-        exec sql
-            FETCH C_CUST_CONTRACTS INTO :contId, :contReference, :brokerId,
-                :productId, :startDate, :endDate, :premiumAmt, :contStatus;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            startDateStr = %char(startDate:*iso);
-            if endDate <> d'0001-01-01';
-                endDateStr = %char(endDate:*iso);
-            else;
-                endDateStr = '';
-            endif;
-
-            jsonRow = '{"CONT_ID":' + %char(contId) +
-                ',"CONT_REFERENCE":"' + %trim(contReference) +
-                '","CUST_ID":' + %char(pCustId) +
-                ',"BROKER_ID":' + %char(brokerId) +
-                ',"PRODUCT_ID":' + %char(productId) +
-                ',"START_DATE":"' + startDateStr +
-                '","END_DATE":"' + endDateStr +
-                '","PREMIUM_AMT":' + %char(premiumAmt) +
-                ',"STATUS":"' + %trim(contStatus) + '"}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_CUST_CONTRACTS INTO :contId, :contReference, :brokerId,
-                    :productId, :startDate, :endDate, :premiumAmt, :contStatus;
-        enddo;
-
-        exec sql CLOSE C_CUST_CONTRACTS;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = CONTSRV_GetCustomerContractsJson(pCustId: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -612,6 +475,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // ListProducts : List all products and return JSON array
+// Delegates to PRODSRV_ListProductsJson for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_ListProducts export;
     dcl-pi *n;
@@ -622,70 +486,9 @@ dcl-proc WRAP_ListProducts export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s statusFilter char(3);
-    dcl-s jsonRow varchar(500);
-    dcl-s productId packed(10:0);
-    dcl-s productCode char(10);
-    dcl-s productName char(50);
-    dcl-s productType char(3);
-    dcl-s basePremium packed(9:2);
-    dcl-s coverageLimit packed(11:2);
-    dcl-s minThreshold packed(9:2);
-    dcl-s waitingMonths packed(2:0);
-    dcl-s prodStatus char(3);
-    dcl-s firstRow ind inz(*on);
-
-    exec sql
-        DECLARE C_PRODUCTS CURSOR FOR
-        SELECT PRODUCT_ID, PRODUCT_CODE, PRODUCT_NAME, PRODUCT_TYPE,
-               BASE_PREMIUM, COVERAGE_LIMIT, MIN_THRESHOLD, WAITING_MONTHS, STATUS
-        FROM MRS1.PRODUCT
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
-        ORDER BY PRODUCT_NAME;
-
     monitor;
-        statusFilter = %trim(pStatus);
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_PRODUCTS;
-
-        exec sql
-            FETCH C_PRODUCTS INTO :productId, :productCode, :productName,
-                :productType, :basePremium, :coverageLimit, :minThreshold,
-                :waitingMonths, :prodStatus;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            jsonRow = '{"PRODUCT_ID":' + %char(productId) +
-                ',"PRODUCT_CODE":"' + %trim(productCode) +
-                '","PRODUCT_NAME":"' + %trim(productName) +
-                '","PRODUCT_TYPE":"' + %trim(productType) +
-                '","BASE_PREMIUM":' + %char(basePremium) +
-                ',"COVERAGE_LIMIT":' + %char(coverageLimit) +
-                ',"MIN_THRESHOLD":' + %char(minThreshold) +
-                ',"WAITING_MONTHS":' + %char(waitingMonths) +
-                ',"STATUS":"' + %trim(prodStatus) + '"}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_PRODUCTS INTO :productId, :productCode, :productName,
-                    :productType, :basePremium, :coverageLimit, :minThreshold,
-                    :waitingMonths, :prodStatus;
-        enddo;
-
-        exec sql CLOSE C_PRODUCTS;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = PRODSRV_ListProductsJson(pStatus: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -695,6 +498,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // GetProductByCode : Get product by code
+// Delegates to PRODSRV_GetProductByCode for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_GetProductByCode export;
     dcl-pi *n;
@@ -712,47 +516,39 @@ dcl-proc WRAP_GetProductByCode export;
         oErrorCode      char(10);
     end-pi;
 
-    dcl-s codeFilter char(10);
+    dcl-ds product likeds(Product_t);
 
-    monitor;
-        codeFilter = %trim(pProductCode);
+    ERRUTIL_init();
+    product = PRODSRV_GetProductByCode(pProductCode);
 
-        exec sql
-            SELECT PRODUCT_ID, PRODUCT_NAME, PRODUCT_TYPE, BASE_PREMIUM,
-                   COVERAGE_LIMIT, MIN_THRESHOLD, WAITING_MONTHS, STATUS
-            INTO :oProductId, :oProductName, :oProductType, :oBasePremium,
-                 :oCoverageLimit, :oMinThreshold, :oWaitingMonths, :oStatus
-            FROM MRS1.PRODUCT
-            WHERE PRODUCT_CODE = :codeFilter;
-
-        // Treat SQLCODE 8013 (PUB400 licensing) as success
-        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            oSuccess = 'Y';
-            oErrorCode = '';
-        elseif sqlcode = 100;
-            oProductId = 0;
-            clear oProductName;
-            clear oProductType;
-            oBasePremium = 0;
-            oCoverageLimit = 0;
-            oMinThreshold = 0;
-            oWaitingMonths = 0;
-            clear oStatus;
-            oSuccess = 'N';
-            oErrorCode = 'DB001';
-        else;
-            oSuccess = 'N';
-            oErrorCode = 'DB004';
-        endif;
-
-    on-error;
+    if product.productId > 0;
+        oProductId = product.productId;
+        oProductName = product.productName;
+        oProductType = product.productType;
+        oBasePremium = product.basePremium;
+        oCoverageLimit = product.coverageLimit;
+        oMinThreshold = product.minThreshold;
+        oWaitingMonths = product.waitingMonths;
+        oStatus = product.status;
+        oSuccess = 'Y';
+        oErrorCode = '';
+    else;
+        oProductId = 0;
+        clear oProductName;
+        clear oProductType;
+        oBasePremium = 0;
+        oCoverageLimit = 0;
+        oMinThreshold = 0;
+        oWaitingMonths = 0;
+        clear oStatus;
         oSuccess = 'N';
-        oErrorCode = 'EXEC_ERR';
-    endmon;
+        oErrorCode = ERRUTIL_getLastErrorCode();
+    endif;
 end-proc;
 
 //--------------------------------------------------------------
 // GetProductGuarantees : Get guarantees for a product (JSON)
+// Delegates to PRODSRV_GetProductGuaranteesJson for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_GetProductGuarantees export;
     dcl-pi *n;
@@ -763,61 +559,9 @@ dcl-proc WRAP_GetProductGuarantees export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s jsonRow varchar(500);
-    dcl-s guaranteeCode char(10);
-    dcl-s guaranteeName char(50);
-    dcl-s description char(200);
-    dcl-s coveragePct packed(5:2);
-    dcl-s maxAmount packed(11:2);
-    dcl-s waitingDays packed(5:0);
-    dcl-s firstRow ind inz(*on);
-
-    exec sql
-        DECLARE C_PROD_GUARANTEES CURSOR FOR
-        SELECT PG.GUARANTEE_CODE, G.GUARANTEE_NAME, G.DESCRIPTION,
-               PG.COVERAGE_PCT, PG.MAX_AMOUNT, PG.WAITING_DAYS
-        FROM MRS1.PRODUCT_GUARANTEE PG
-        JOIN MRS1.GUARANTEE G ON PG.GUARANTEE_CODE = G.GUARANTEE_CODE
-        WHERE PG.PRODUCT_ID = :pProductId
-        ORDER BY G.GUARANTEE_NAME;
-
     monitor;
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_PROD_GUARANTEES;
-
-        exec sql
-            FETCH C_PROD_GUARANTEES INTO :guaranteeCode, :guaranteeName,
-                :description, :coveragePct, :maxAmount, :waitingDays;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            jsonRow = '{"GUARANTEE_CODE":"' + %trim(guaranteeCode) +
-                '","GUARANTEE_NAME":"' + %trim(guaranteeName) +
-                '","DESCRIPTION":"' + %trim(description) +
-                '","COVERAGE_PCT":' + %char(coveragePct) +
-                ',"MAX_AMOUNT":' + %char(maxAmount) +
-                ',"WAITING_DAYS":' + %char(waitingDays) + '}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_PROD_GUARANTEES INTO :guaranteeCode, :guaranteeName,
-                    :description, :coveragePct, :maxAmount, :waitingDays;
-        enddo;
-
-        exec sql CLOSE C_PROD_GUARANTEES;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = PRODSRV_GetProductGuaranteesJson(pProductId: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -1021,7 +765,8 @@ dcl-proc WRAP_CreateContract export;
     ERRUTIL_init();
 
     // Get product code from product ID for premium calculation
-    exec sql SELECT PRODUCT_CODE INTO :productCode FROM PRODUCT WHERE PRODUCT_ID = :pProductId;
+    // Delegate to PRODSRV - NO SQL in RPGWRAP
+    productCode = PRODSRV_GetProductCode(pProductId);
 
     contract.custId = pCustId;
     contract.brokerId = pBrokerId;
@@ -1055,7 +800,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // ListContracts : List contracts and return JSON array
-// Uses cursor-based approach for compatibility
+// Delegates to CONTSRV_ListContractsJson for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_ListContracts export;
     dcl-pi *n;
@@ -1066,88 +811,9 @@ dcl-proc WRAP_ListContracts export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s statusFilter char(3);
-    dcl-s jsonRow varchar(500);
-    dcl-s contId packed(10:0);
-    dcl-s contReference char(25);
-    dcl-s custId packed(10:0);
-    dcl-s brokerId packed(10:0);
-    dcl-s productId packed(10:0);
-    dcl-s startDate date;
-    dcl-s endDate date;
-    dcl-s vehiclesCount packed(2:0);
-    dcl-s payFrequency char(1);
-    dcl-s premiumAmt packed(9:2);
-    dcl-s autoRenew char(1);
-    dcl-s contStatus char(3);
-    dcl-s firstRow ind inz(*on);
-    dcl-s startDateStr char(10);
-    dcl-s endDateStr char(10);
-
-    // DECLARE must be outside MONITOR block
-    exec sql
-        DECLARE C_CONTRACTS CURSOR FOR
-        SELECT CONT_ID, CONT_REFERENCE, CUST_ID, BROKER_ID,
-               PRODUCT_ID, START_DATE, END_DATE, VEHICLES_COUNT,
-               PAY_FREQUENCY, PREMIUM_AMT, AUTO_RENEW, STATUS
-        FROM MRS1.CONTRACT
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
-        ORDER BY START_DATE DESC;
-
     monitor;
-        statusFilter = %trim(pStatus);
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_CONTRACTS;
-
-        exec sql
-            FETCH C_CONTRACTS INTO :contId, :contReference, :custId,
-                :brokerId, :productId, :startDate, :endDate,
-                :vehiclesCount, :payFrequency, :premiumAmt, :autoRenew, :contStatus;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            // Format dates
-            startDateStr = %char(startDate:*iso);
-            if endDate <> d'0001-01-01';
-                endDateStr = %char(endDate:*iso);
-            else;
-                endDateStr = '';
-            endif;
-
-            jsonRow = '{"CONT_ID":' + %char(contId) +
-                ',"CONT_REFERENCE":"' + %trim(contReference) +
-                '","CUST_ID":' + %char(custId) +
-                ',"BROKER_ID":' + %char(brokerId) +
-                ',"PRODUCT_ID":' + %char(productId) +
-                ',"START_DATE":"' + startDateStr +
-                '","END_DATE":"' + endDateStr +
-                '","VEHICLES_COUNT":' + %char(vehiclesCount) +
-                ',"PAY_FREQUENCY":"' + %trim(payFrequency) +
-                '","PREMIUM_AMT":' + %char(premiumAmt) +
-                ',"AUTO_RENEW":"' + %trim(autoRenew) +
-                '","STATUS":"' + %trim(contStatus) + '"}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_CONTRACTS INTO :contId, :contReference, :custId,
-                    :brokerId, :productId, :startDate, :endDate,
-                    :vehiclesCount, :payFrequency, :premiumAmt, :autoRenew, :contStatus;
-        enddo;
-
-        exec sql CLOSE C_CONTRACTS;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = CONTSRV_ListContractsJson(pStatus: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -1156,7 +822,8 @@ dcl-proc WRAP_ListContracts export;
 end-proc;
 
 //--------------------------------------------------------------
-// DeleteContract : Soft delete contract (set status to CLS)
+// DeleteContract : Cancel contract (set status to CAN)
+// Delegates to CONTSRV_CancelContract for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_DeleteContract export;
     dcl-pi *n;
@@ -1166,23 +833,19 @@ dcl-proc WRAP_DeleteContract export;
         oErrorCode      char(10);
     end-pi;
 
+    dcl-s result ind;
+
     ERRUTIL_init();
 
     monitor;
-        exec sql
-            UPDATE MRS1.CONTRACT
-            SET STATUS = 'CLS',
-                UPDATED_AT = CURRENT_TIMESTAMP
-            WHERE CONT_ID = :pContId;
+        result = CONTSRV_CancelContract(pContId);
 
-        // Treat SQLCODE 8013 (PUB400 licensing) as success
-        if SQLCODE = 0 or SQLCODE = 8013 or SQLCODE = -8013;
+        if result;
             oSuccess = 'Y';
             oErrorCode = '';
         else;
             oSuccess = 'N';
-            oErrorCode = 'DB004';
-            ERRUTIL_addErrorCode('DB004');
+            oErrorCode = ERRUTIL_getLastErrorCode();
         endif;
 
     on-error;
@@ -1197,6 +860,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // ListClaims : List claims and return JSON array
+// Delegates to CLAIMSRV_ListClaimsJson for SQL operations
 //--------------------------------------------------------------
 dcl-proc WRAP_ListClaims export;
     dcl-pi *n;
@@ -1207,80 +871,9 @@ dcl-proc WRAP_ListClaims export;
         oSuccess        char(1);
     end-pi;
 
-    dcl-s statusFilter char(3);
-    dcl-s jsonRow varchar(600);
-    dcl-s claimId packed(10:0);
-    dcl-s claimReference char(15);
-    dcl-s fileReference char(15);
-    dcl-s contId packed(10:0);
-    dcl-s guaranteeCode char(10);
-    dcl-s declarationDate date;
-    dcl-s incidentDate date;
-    dcl-s claimedAmount packed(11:2);
-    dcl-s approvedAmount packed(11:2);
-    dcl-s claimStatus char(3);
-    dcl-s resolutionType char(3);
-    dcl-s firstRow ind inz(*on);
-    dcl-s declDateStr char(10);
-    dcl-s incDateStr char(10);
-
-    exec sql
-        DECLARE C_CLAIMS CURSOR FOR
-        SELECT CLAIM_ID, CLAIM_REFERENCE, FILE_REFERENCE, CONT_ID,
-               GUARANTEE_CODE, DECLARATION_DATE, INCIDENT_DATE,
-               CLAIMED_AMOUNT, APPROVED_AMOUNT, STATUS, RESOLUTION_TYPE
-        FROM MRS1.CLAIM
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
-        ORDER BY DECLARATION_DATE DESC;
-
     monitor;
-        statusFilter = %trim(pStatus);
-        oJsonData = '[';
-        oCount = 0;
-
-        exec sql OPEN C_CLAIMS;
-
-        exec sql
-            FETCH C_CLAIMS INTO :claimId, :claimReference, :fileReference,
-                :contId, :guaranteeCode, :declarationDate, :incidentDate,
-                :claimedAmount, :approvedAmount, :claimStatus, :resolutionType;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                oJsonData = %trim(oJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            declDateStr = %char(declarationDate:*iso);
-            incDateStr = %char(incidentDate:*iso);
-
-            jsonRow = '{"CLAIM_ID":' + %char(claimId) +
-                ',"CLAIM_REFERENCE":"' + %trim(claimReference) +
-                '","FILE_REFERENCE":"' + %trim(fileReference) +
-                '","CONT_ID":' + %char(contId) +
-                ',"GUARANTEE_CODE":"' + %trim(guaranteeCode) +
-                '","DECLARATION_DATE":"' + declDateStr +
-                '","INCIDENT_DATE":"' + incDateStr +
-                '","CLAIMED_AMOUNT":' + %char(claimedAmount) +
-                ',"APPROVED_AMOUNT":' + %char(approvedAmount) +
-                ',"STATUS":"' + %trim(claimStatus) +
-                '","RESOLUTION_TYPE":"' + %trim(resolutionType) + '"}';
-
-            oJsonData = %trim(oJsonData) + jsonRow;
-            oCount += 1;
-
-            exec sql
-                FETCH C_CLAIMS INTO :claimId, :claimReference, :fileReference,
-                    :contId, :guaranteeCode, :declarationDate, :incidentDate,
-                    :claimedAmount, :approvedAmount, :claimStatus, :resolutionType;
-        enddo;
-
-        exec sql CLOSE C_CLAIMS;
-
-        oJsonData = %trim(oJsonData) + ']';
+        oCount = CLAIMSRV_ListClaimsJson(pStatus: oJsonData);
         oSuccess = 'Y';
-
     on-error;
         oJsonData = '[]';
         oCount = 0;
@@ -1474,6 +1067,7 @@ end-proc;
 
 //--------------------------------------------------------------
 // GetDashboardStats : Get KPI statistics
+// Delegates to service CountStats procedures - NO SQL in RPGWRAP
 //--------------------------------------------------------------
 dcl-proc WRAP_GetDashboardStats export;
     dcl-pi *n;
@@ -1492,31 +1086,17 @@ dcl-proc WRAP_GetDashboardStats export;
     end-pi;
 
     monitor;
-        // Broker stats
-        exec sql
-            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
-            INTO :oTotalBrokers, :oActiveBrokers
-            FROM MRS1.BROKER;
+        // Broker stats - delegate to BROKRSRV
+        BROKRSRV_CountStats(oTotalBrokers: oActiveBrokers);
 
-        // Customer stats
-        exec sql
-            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
-            INTO :oTotalCustomers, :oActiveCustomers
-            FROM MRS1.CUSTOMER;
+        // Customer stats - delegate to CUSTSRV
+        CUSTSRV_CountStats(oTotalCustomers: oActiveCustomers);
 
-        // Contract stats
-        exec sql
-            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
-            INTO :oTotalContracts, :oActiveContracts
-            FROM MRS1.CONTRACT;
+        // Contract stats - delegate to CONTSRV
+        CONTSRV_CountStats(oTotalContracts: oActiveContracts);
 
-        // Claim stats
-        exec sql
-            SELECT COUNT(*),
-                   SUM(CASE WHEN RESOLUTION_TYPE = 'AMI' THEN 1 ELSE 0 END),
-                   SUM(CASE WHEN RESOLUTION_TYPE = 'TRI' THEN 1 ELSE 0 END)
-            INTO :oTotalClaims, :oAmicableClaims, :oTribunalClaims
-            FROM MRS1.CLAIM;
+        // Claim stats - delegate to CLAIMSRV
+        CLAIMSRV_CountStats(oTotalClaims: oAmicableClaims: oTribunalClaims);
 
         // Calculate amicable rate (target: 79%)
         if (oAmicableClaims + oTribunalClaims) > 0;

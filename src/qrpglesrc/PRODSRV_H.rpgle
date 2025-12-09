@@ -82,8 +82,18 @@ dcl-pr PRODSRV_ListProducts int(10);
     pProductType char(3) const options(*nopass);
 end-pr;
 
+dcl-pr PRODSRV_ListProductsJson int(10);
+    pStatusFilter   char(3) const;
+    pJsonData       varchar(32000);
+end-pr;
+
 dcl-pr PRODSRV_GetProductGuarantees int(10);
     pProductId packed(10:0) const;
+end-pr;
+
+dcl-pr PRODSRV_GetProductGuaranteesJson int(10);
+    pProductId      packed(10:0) const;
+    pJsonData       varchar(32000);
 end-pr;
 
 dcl-pr PRODSRV_CalculateBasePremium packed(9:2);
@@ -103,4 +113,8 @@ end-pr;
 dcl-pr PRODSRV_GetGuaranteeWaitingPeriod packed(2:0);
     pProductId packed(10:0) const;
     pGuaranteeCode char(10) const;
+end-pr;
+
+dcl-pr PRODSRV_GetProductCode char(10);
+    pProductId packed(10:0) const;
 end-pr;

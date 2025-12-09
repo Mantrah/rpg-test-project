@@ -426,3 +426,29 @@ dcl-proc BROKRSRV_ListBrokersJson export;
 
     return resultCount;
 end-proc;
+
+//==============================================================
+// CountStats : Get broker counts for dashboard
+//
+//  Returns total and active broker counts
+//
+//==============================================================
+dcl-proc BROKRSRV_CountStats export;
+    dcl-pi *n;
+        oTotal          packed(10:0);
+        oActive         packed(10:0);
+    end-pi;
+
+    oTotal = 0;
+    oActive = 0;
+
+    monitor;
+        exec sql
+            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
+            INTO :oTotal, :oActive
+            FROM MRS1.BROKER;
+
+    on-error;
+        ERRUTIL_addExecutionError();
+    endmon;
+end-proc;

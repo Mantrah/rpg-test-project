@@ -4,7 +4,9 @@
  * Target: IBM i V7R5 (PUB400)
  */
 
-require('dotenv').config();
+const path = require('path');
+// Load .env from api directory (works regardless of cwd)
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const express = require('express');
 const cors = require('cors');

@@ -73,6 +73,10 @@ dcl-pr CUSTSRV_GetCustomer likeds(Customer_t);
     pCustId packed(10:0) const;
 end-pr;
 
+dcl-pr CUSTSRV_GetCustomerByEmail likeds(Customer_t);
+    pEmail varchar(100) const;
+end-pr;
+
 dcl-pr CUSTSRV_UpdateCustomer ind;
     pCustomer likeds(Customer_t) const;
 end-pr;
@@ -83,6 +87,11 @@ end-pr;
 
 dcl-pr CUSTSRV_ListCustomers int(10);
     pFilter likeds(CustomerFilter_t) const;
+end-pr;
+
+dcl-pr CUSTSRV_ListCustomersJson int(10);
+    pStatusFilter   char(3) const;
+    pJsonData       varchar(32000);
 end-pr;
 
 // Validation
@@ -104,4 +113,9 @@ end-pr;
 
 dcl-pr CUSTSRV_IsValidPostalCode ind;
     pPostalCode char(7) const;
+end-pr;
+
+dcl-pr CUSTSRV_CountStats;
+    oTotal          packed(10:0);
+    oActive         packed(10:0);
 end-pr;

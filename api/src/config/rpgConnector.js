@@ -301,8 +301,10 @@ const createBroker = async (brokerData) => {
       ...brokerData
     };
   } catch (error) {
-    if ((error.message && error.message.includes('8013')) || error.code === 'DB004') {
-      console.warn('[RPG] Database error (8013/DB004) - ignoring for createBroker');
+    // Only ignore SQLCODE 8013 (PUB400 licensing warning) - not a real error
+    // DB004 is a real database error that must be thrown
+    if (error.message && error.message.includes('8013') && !error.code) {
+      console.warn('[RPG] SQLCODE 8013 (licensing warning) - ignoring');
       return null;
     }
     throw error;
@@ -388,7 +390,7 @@ const createCustomer = async (customerData) => {
     { name: 'pFirstName', type: '50a', value: customerData.firstName || '', io: 'in' },
     { name: 'pLastName', type: '50a', value: customerData.lastName || '', io: 'in' },
     { name: 'pNationalId', type: '15a', value: customerData.nationalId || '', io: 'in' },
-    { name: 'pBirthDate', type: '10a', value: customerData.birthDate || '1900-01-01', io: 'in' },
+    { name: 'pBirthDate', type: '10a', value: customerData.birthDate || '', io: 'in' },
     { name: 'pCompanyName', type: '100a', value: customerData.companyName || '', io: 'in' },
     { name: 'pVatNumber', type: '12a', value: customerData.vatNumber || '', io: 'in' },
     { name: 'pStreet', type: '30a', value: customerData.street || '', io: 'in' },
@@ -421,8 +423,10 @@ const createCustomer = async (customerData) => {
       ...customerData
     };
   } catch (error) {
-    if ((error.message && error.message.includes('8013')) || error.code === 'DB004') {
-      console.warn('[RPG] Database error (8013/DB004) - ignoring for createCustomer');
+    // Only ignore SQLCODE 8013 (PUB400 licensing warning) - not a real error
+    // DB004 is a real database error that must be thrown
+    if (error.message && error.message.includes('8013') && !error.code) {
+      console.warn('[RPG] SQLCODE 8013 (licensing warning) - ignoring');
       return null;
     }
     throw error;

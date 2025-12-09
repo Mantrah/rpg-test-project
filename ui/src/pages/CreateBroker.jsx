@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { brokerApi, bceApi } from '../services/api'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 const CreateBroker = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [formData, setFormData] = useState({
     brokerCode: '',
@@ -32,6 +34,8 @@ const CreateBroker = () => {
   const createMutation = useMutation({
     mutationFn: brokerApi.create,
     onSuccess: (data) => {
+      // Invalidate broker list cache so it refreshes when we navigate back
+      queryClient.invalidateQueries({ queryKey: ['brokers'] })
       alert(`Courtier créé avec succès!\n\nCode: ${data.data.brokerCode}`)
       navigate('/brokers')
     },
@@ -358,10 +362,11 @@ const CreateBroker = () => {
           </button>
           <button
             type="submit"
-            disabled={createMutation.isLoading}
-            className="btn-success"
+            disabled={createMutation.isPending}
+            className="btn-success flex items-center gap-2"
           >
-            {createMutation.isLoading ? 'Création...' : 'Créer le Courtier'}
+            {createMutation.isPending && <ButtonSpinner />}
+            {createMutation.isPending ? 'Création...' : 'Créer le Courtier'}
           </button>
         </div>
       </form>

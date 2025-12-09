@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { customerApi, productApi, contractApi } from '../services/api'
 import Loading from '../components/Loading'
 import ErrorMessage from '../components/ErrorMessage'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 // Frequency mapping: code -> {label, multiplier}
 const FREQUENCY_INFO = {
@@ -15,6 +16,7 @@ const FREQUENCY_INFO = {
 const CreateContract = () => {
   const location = useLocation()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const broker = location.state?.broker
 
   const [step, setStep] = useState(1)
@@ -28,6 +30,7 @@ const CreateContract = () => {
   })
 
   const [errors, setErrors] = useState({})
+  const [isCalculatingPremium, setIsCalculatingPremium] = useState(false)
 
   // Track latest premium request to ignore stale responses
   const latestPremiumRequestRef = useRef(0)
@@ -58,6 +61,8 @@ const CreateContract = () => {
   const createMutation = useMutation({
     mutationFn: contractApi.create,
     onSuccess: (data) => {
+      // Invalidate contracts list cache so it refreshes when we navigate back
+      queryClient.invalidateQueries({ queryKey: ['contracts'] })
       alert(`Contrat cree avec succes!\n\nReference: ${data.data.contReference}`)
       navigate('/contracts')
     },
@@ -69,6 +74,10 @@ const CreateContract = () => {
   // Auto-calculate premium when product or vehicles change (with debounce and request tracking)
   useEffect(() => {
     if (!formData.productCode || step !== 2) return
+
+    // Clear previous result and show loading
+    setFormData(prev => ({ ...prev, calculatedPremium: null }))
+    setIsCalculatingPremium(true)
 
     const timer = setTimeout(async () => {
       // Increment request ID and capture it for this request
@@ -87,9 +96,13 @@ const CreateContract = () => {
             ...prev,
             calculatedPremium: result.data,
           }))
+          setIsCalculatingPremium(false)
         }
       } catch (error) {
         console.error('Premium calculation error:', error)
+        if (requestId === latestPremiumRequestRef.current) {
+          setIsCalculatingPremium(false)
+        }
       }
     }, 300) // 300ms debounce
 
@@ -297,39 +310,44 @@ const CreateContract = () => {
           </div>
 
           {/* Premium Calculator Result */}
-          {premiumMutation.isPending && <Loading message="Calcul de la prime..." />}
-
-          {premiumMutation.isError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-red-700">Erreur lors du calcul de la prime. Veuillez reessayer.</p>
-            </div>
-          )}
-
-          {formData.calculatedPremium && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="font-semibold text-green-900 mb-3">Calcul de la Prime</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Prime de base:</span>
-                  <span className="font-medium">{(formData.calculatedPremium.basePremium || 0).toFixed(2)} EUR</span>
+          {formData.productCode && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 min-h-[140px]">
+              {isCalculatingPremium ? (
+                <div className="flex flex-col items-center justify-center h-full py-6">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                  <p className="mt-3 text-green-700 text-sm">Calcul de la prime...</p>
                 </div>
-                {formData.vehiclesCount > 0 && (
-                  <div className="flex justify-between">
-                    <span>Addon vehicules ({formData.vehiclesCount} x 25 EUR):</span>
-                    <span className="font-medium">{(formData.calculatedPremium.vehicleAddon || 0).toFixed(2)} EUR</span>
+              ) : formData.calculatedPremium ? (
+                <>
+                  <h3 className="font-semibold text-green-900 mb-3">Calcul de la Prime</h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Prime de base:</span>
+                      <span className="font-medium">{(formData.calculatedPremium.basePremium || 0).toFixed(2)} EUR</span>
+                    </div>
+                    {formData.vehiclesCount > 0 && (
+                      <div className="flex justify-between">
+                        <span>Addon vehicules ({formData.vehiclesCount} x 25 EUR):</span>
+                        <span className="font-medium">{(formData.calculatedPremium.vehicleAddon || 0).toFixed(2)} EUR</span>
+                      </div>
+                    )}
+                    {FREQUENCY_INFO[formData.payFrequency]?.multiplier > 1 && (
+                      <div className="flex justify-between">
+                        <span>Surcharge {FREQUENCY_INFO[formData.payFrequency]?.label} (+{((FREQUENCY_INFO[formData.payFrequency]?.multiplier - 1) * 100).toFixed(0)}%):</span>
+                        <span className="font-medium">{(formData.calculatedPremium.frequencySurcharge || 0).toFixed(2)} EUR</span>
+                      </div>
+                    )}
+                    <div className="border-t border-green-300 pt-2 flex justify-between text-lg font-bold text-green-900">
+                      <span>TOTAL:</span>
+                      <span>{(formData.calculatedPremium.totalPremium || 0).toFixed(2)} EUR</span>
+                    </div>
                   </div>
-                )}
-                {FREQUENCY_INFO[formData.payFrequency]?.multiplier > 1 && (
-                  <div className="flex justify-between">
-                    <span>Surcharge {FREQUENCY_INFO[formData.payFrequency]?.label} (+{((FREQUENCY_INFO[formData.payFrequency]?.multiplier - 1) * 100).toFixed(0)}%):</span>
-                    <span className="font-medium">{(formData.calculatedPremium.frequencySurcharge || 0).toFixed(2)} EUR</span>
-                  </div>
-                )}
-                <div className="border-t border-green-300 pt-2 flex justify-between text-lg font-bold text-green-900">
-                  <span>TOTAL:</span>
-                  <span>{(formData.calculatedPremium.totalPremium || 0).toFixed(2)} EUR</span>
+                </>
+              ) : (
+                <div className="flex items-center justify-center h-full py-6">
+                  <p className="text-green-700 text-sm">Selectionnez un produit pour calculer la prime</p>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -395,8 +413,9 @@ const CreateContract = () => {
             <button
               onClick={handleSubmit}
               disabled={createMutation.isPending}
-              className="btn-success"
+              className="btn-success flex items-center gap-2"
             >
+              {createMutation.isPending && <ButtonSpinner />}
               {createMutation.isPending ? 'Creation...' : 'Creer le Contrat'}
             </button>
           </div>

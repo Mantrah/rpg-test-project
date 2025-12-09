@@ -115,6 +115,11 @@ dcl-pr CLAIMSRV_GetContractClaims int(10);
     pContId packed(10:0) const;
 end-pr;
 
+dcl-pr CLAIMSRV_ListClaimsJson int(10);
+    pStatusFilter   char(3) const;
+    pJsonData       varchar(32000);
+end-pr;
+
 // Validation
 dcl-pr CLAIMSRV_IsValidClaim ind;
     pClaim likeds(Claim_t) const;
@@ -150,4 +155,10 @@ end-pr;
 
 dcl-pr CLAIMSRV_GenerateFileRef char(20);
     pClaimId packed(10:0) const;
+end-pr;
+
+dcl-pr CLAIMSRV_CountStats;
+    oTotal          packed(10:0);
+    oAmicable       packed(10:0);
+    oTribunal       packed(10:0);
 end-pr;

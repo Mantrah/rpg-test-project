@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { brokerApi } from '../services/api'
 import Loading from '../components/Loading'
 import ErrorMessage from '../components/ErrorMessage'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 const BrokerList = () => {
   const navigate = useNavigate()
@@ -174,9 +175,10 @@ const BrokerList = () => {
                       <button
                         onClick={() => handleDelete(broker)}
                         disabled={deletingId === broker.BROKER_ID}
-                        className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50"
+                        className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50 flex items-center gap-1"
                       >
-                        {deletingId === broker.BROKER_ID ? '...' : 'Supprimer'}
+                        {deletingId === broker.BROKER_ID && <ButtonSpinner className="text-red-600" />}
+                        {deletingId === broker.BROKER_ID ? 'Suppression...' : 'Supprimer'}
                       </button>
                     </td>
                   </tr>

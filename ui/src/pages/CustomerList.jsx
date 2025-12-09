@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { customerApi } from '../services/api'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 const CustomerList = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [deletingId, setDeletingId] = useState(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['customers'],
@@ -15,11 +18,16 @@ const CustomerList = () => {
     mutationFn: customerApi.delete,
     onSuccess: () => {
       queryClient.invalidateQueries(['customers'])
+      setDeletingId(null)
     },
+    onError: () => {
+      setDeletingId(null)
+    }
   })
 
   const handleDelete = (id, name) => {
     if (window.confirm(`Supprimer le client "${name}" ?`)) {
+      setDeletingId(id)
       deleteMutation.mutate(id)
     }
   }
@@ -135,17 +143,21 @@ const CustomerList = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleDelete(
-                        customer.CUST_ID,
-                        customer.CUST_TYPE === 'IND'
-                          ? `${customer.FIRST_NAME} ${customer.LAST_NAME}`
-                          : customer.COMPANY_NAME
-                      )}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Supprimer
-                    </button>
+                    {customer.STATUS === 'ACT' && (
+                      <button
+                        onClick={() => handleDelete(
+                          customer.CUST_ID,
+                          customer.CUST_TYPE === 'IND'
+                            ? `${customer.FIRST_NAME} ${customer.LAST_NAME}`
+                            : customer.COMPANY_NAME
+                        )}
+                        disabled={deletingId === customer.CUST_ID}
+                        className="text-red-600 hover:text-red-900 disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {deletingId === customer.CUST_ID && <ButtonSpinner className="text-red-600" />}
+                        {deletingId === customer.CUST_ID ? 'Suppression...' : 'Supprimer'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

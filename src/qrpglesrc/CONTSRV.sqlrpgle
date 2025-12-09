@@ -279,6 +279,109 @@ dcl-proc CONTSRV_ListContracts export;
 end-proc;
 
 //==============================================================
+// ListContractsJson : List contracts and return JSON array
+//
+//  Returns: Result count
+//
+//==============================================================
+dcl-proc CONTSRV_ListContractsJson export;
+    dcl-pi *n int(10);
+        pStatusFilter   char(3) const;
+        pJsonData       varchar(32000);
+    end-pi;
+
+    dcl-s jsonRow varchar(500);
+    dcl-s contId packed(10:0);
+    dcl-s contReference char(20);
+    dcl-s custId packed(10:0);
+    dcl-s brokerId packed(10:0);
+    dcl-s productId packed(10:0);
+    dcl-s startDate date;
+    dcl-s endDate date;
+    dcl-s vehiclesCount packed(2:0);
+    dcl-s payFrequency char(1);
+    dcl-s premiumAmt packed(9:2);
+    dcl-s autoRenew char(1);
+    dcl-s contStatus char(3);
+    dcl-s resultCount int(10) inz(0);
+    dcl-s firstRow ind inz(*on);
+    dcl-s statusFilter char(3);
+    dcl-s startDateStr char(10);
+    dcl-s endDateStr char(10);
+
+    exec sql
+        DECLARE C_LISTCONTRACTS CURSOR FOR
+        SELECT CONT_ID, CONT_REFERENCE, CUST_ID, BROKER_ID,
+               PRODUCT_ID, START_DATE, END_DATE, VEHICLES_COUNT,
+               PAY_FREQUENCY, PREMIUM_AMT, AUTO_RENEW, STATUS
+        FROM MRS1.CONTRACT
+        WHERE :statusFilter = '' OR STATUS = :statusFilter
+        ORDER BY START_DATE DESC;
+
+    monitor;
+        statusFilter = %trim(pStatusFilter);
+        pJsonData = '[';
+
+        exec sql OPEN C_LISTCONTRACTS;
+
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
+            pJsonData = '[]';
+            return 0;
+        endif;
+
+        exec sql
+            FETCH C_LISTCONTRACTS INTO :contId, :contReference, :custId,
+                :brokerId, :productId, :startDate, :endDate,
+                :vehiclesCount, :payFrequency, :premiumAmt, :autoRenew, :contStatus;
+
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
+            if not firstRow;
+                pJsonData = %trim(pJsonData) + ',';
+            endif;
+            firstRow = *off;
+
+            startDateStr = %char(startDate:*iso);
+            if endDate <> d'0001-01-01';
+                endDateStr = %char(endDate:*iso);
+            else;
+                endDateStr = '';
+            endif;
+
+            jsonRow = '{"CONT_ID":' + %char(contId) +
+                ',"CONT_REFERENCE":"' + %trim(contReference) +
+                '","CUST_ID":' + %char(custId) +
+                ',"BROKER_ID":' + %char(brokerId) +
+                ',"PRODUCT_ID":' + %char(productId) +
+                ',"START_DATE":"' + startDateStr +
+                '","END_DATE":"' + endDateStr +
+                '","VEHICLES_COUNT":' + %char(vehiclesCount) +
+                ',"PAY_FREQUENCY":"' + %trim(payFrequency) +
+                '","PREMIUM_AMT":' + %char(premiumAmt) +
+                ',"AUTO_RENEW":"' + %trim(autoRenew) +
+                '","STATUS":"' + %trim(contStatus) + '"}';
+
+            pJsonData = %trim(pJsonData) + jsonRow;
+            resultCount += 1;
+
+            exec sql
+                FETCH C_LISTCONTRACTS INTO :contId, :contReference, :custId,
+                    :brokerId, :productId, :startDate, :endDate,
+                    :vehiclesCount, :payFrequency, :premiumAmt, :autoRenew, :contStatus;
+        enddo;
+
+        exec sql CLOSE C_LISTCONTRACTS;
+
+        pJsonData = %trim(pJsonData) + ']';
+
+    on-error;
+        pJsonData = '[]';
+        ERRUTIL_addExecutionError();
+    endmon;
+
+    return resultCount;
+end-proc;
+
+//==============================================================
 // GetCustomerContracts : Get contracts for customer
 //
 //  Returns: Result count
@@ -299,6 +402,97 @@ dcl-proc CONTSRV_GetCustomerContracts export;
             WHERE CUST_ID = :pCustId;
 
     on-error;
+        ERRUTIL_addExecutionError();
+    endmon;
+
+    return resultCount;
+end-proc;
+
+//==============================================================
+// GetCustomerContractsJson : Get contracts for customer as JSON
+//
+//  Returns: Result count
+//
+//==============================================================
+dcl-proc CONTSRV_GetCustomerContractsJson export;
+    dcl-pi *n int(10);
+        pCustId         packed(10:0) const;
+        pJsonData       varchar(32000);
+    end-pi;
+
+    dcl-s jsonRow varchar(500);
+    dcl-s contId packed(10:0);
+    dcl-s contReference char(25);
+    dcl-s brokerId packed(10:0);
+    dcl-s productId packed(10:0);
+    dcl-s startDate date;
+    dcl-s endDate date;
+    dcl-s premiumAmt packed(9:2);
+    dcl-s contStatus char(3);
+    dcl-s resultCount int(10) inz(0);
+    dcl-s firstRow ind inz(*on);
+    dcl-s startDateStr char(10);
+    dcl-s endDateStr char(10);
+
+    exec sql
+        DECLARE C_CUSTCONTRACTS CURSOR FOR
+        SELECT CONT_ID, CONT_REFERENCE, BROKER_ID, PRODUCT_ID,
+               START_DATE, END_DATE, PREMIUM_AMT, STATUS
+        FROM MRS1.CONTRACT
+        WHERE CUST_ID = :pCustId
+        ORDER BY START_DATE DESC;
+
+    monitor;
+        pJsonData = '[';
+
+        exec sql OPEN C_CUSTCONTRACTS;
+
+        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
+            pJsonData = '[]';
+            return 0;
+        endif;
+
+        exec sql
+            FETCH C_CUSTCONTRACTS INTO :contId, :contReference, :brokerId,
+                :productId, :startDate, :endDate, :premiumAmt, :contStatus;
+
+        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
+            if not firstRow;
+                pJsonData = %trim(pJsonData) + ',';
+            endif;
+            firstRow = *off;
+
+            startDateStr = %char(startDate:*iso);
+            if endDate <> d'0001-01-01';
+                endDateStr = %char(endDate:*iso);
+            else;
+                endDateStr = '';
+            endif;
+
+            jsonRow = '{"CONT_ID":' + %char(contId) +
+                ',"CONT_REFERENCE":"' + %trim(contReference) +
+                '","CUST_ID":' + %char(pCustId) +
+                ',"BROKER_ID":' + %char(brokerId) +
+                ',"PRODUCT_ID":' + %char(productId) +
+                ',"START_DATE":"' + startDateStr +
+                '","END_DATE":"' + endDateStr +
+                '","PREMIUM_AMT":' + %char(premiumAmt) +
+                ',"STATUS":"' + %trim(contStatus) + '"}';
+
+            pJsonData = %trim(pJsonData) + jsonRow;
+            resultCount += 1;
+
+            exec sql
+                FETCH C_CUSTCONTRACTS INTO :contId, :contReference, :brokerId,
+                    :productId, :startDate, :endDate, :premiumAmt, :contStatus;
+        enddo;
+
+        exec sql CLOSE C_CUSTCONTRACTS;
+
+        pJsonData = %trim(pJsonData) + ']';
+
+    on-error;
+        pJsonData = '[]';
         ERRUTIL_addExecutionError();
     endmon;
 
@@ -555,4 +749,30 @@ dcl-proc CONTSRV_GenerateContractRef export;
                 %trim(%editc(sequence: 'Z'));
 
     return reference;
+end-proc;
+
+//==============================================================
+// CountStats : Get contract counts for dashboard
+//
+//  Returns total and active contract counts
+//
+//==============================================================
+dcl-proc CONTSRV_CountStats export;
+    dcl-pi *n;
+        oTotal          packed(10:0);
+        oActive         packed(10:0);
+    end-pi;
+
+    oTotal = 0;
+    oActive = 0;
+
+    monitor;
+        exec sql
+            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
+            INTO :oTotal, :oActive
+            FROM MRS1.CONTRACT;
+
+    on-error;
+        ERRUTIL_addExecutionError();
+    endmon;
 end-proc;

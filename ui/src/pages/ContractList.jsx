@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { contractApi } from '../services/api'
 import Loading from '../components/Loading'
 import ErrorMessage from '../components/ErrorMessage'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 const ContractList = () => {
   const navigate = useNavigate()
@@ -208,9 +209,10 @@ const ContractList = () => {
                           <button
                             onClick={() => handleDelete(contract)}
                             disabled={deletingId === contract.CONT_ID}
-                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50"
+                            className="px-3 py-1 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded disabled:opacity-50 flex items-center gap-1"
                           >
-                            {deletingId === contract.CONT_ID ? '...' : 'Cloturer'}
+                            {deletingId === contract.CONT_ID && <ButtonSpinner className="text-red-600" />}
+                            {deletingId === contract.CONT_ID ? 'Cloture...' : 'Cloturer'}
                           </button>
                         </>
                       )}

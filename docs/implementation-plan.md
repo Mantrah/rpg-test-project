@@ -337,6 +337,20 @@ Legal protection claims (sinistres).
 
 ```
 ┌─────────────────────────────────────────────────────────┐
+│              Node.js API (rpgConnector.js)              │
+│                  iToolkit/XMLSERVICE                    │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│              RPGWRAP (Wrapper Layer)                    │
+│  - Converts scalar params ↔ Data Structures             │
+│  - List ops: JSON generation via SQL cursors            │
+│  - CRUD ops: Delegates to *SRV business services        │
+└────────────────────────┬────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────┐
 │                    Service Layer                        │
 ├──────────┬──────────┬──────────┬──────────┬────────────┤
 │ BROKRSRV │ CUSTSRV  │ PRODSRV  │ CONTSRV  │ CLAIMSRV   │

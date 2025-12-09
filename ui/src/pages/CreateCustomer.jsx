@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { customerApi, bceApi } from '../services/api'
+import ButtonSpinner from '../components/ButtonSpinner'
 
 const CreateCustomer = () => {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [customerType, setCustomerType] = useState('IND')
   const [formData, setFormData] = useState({
@@ -34,6 +36,8 @@ const CreateCustomer = () => {
   const createMutation = useMutation({
     mutationFn: customerApi.create,
     onSuccess: (data) => {
+      // Invalidate customer list cache so it refreshes when we navigate back
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
       alert(`Client créé avec succès!`)
       navigate('/customers')
     },
@@ -404,10 +408,11 @@ const CreateCustomer = () => {
           </button>
           <button
             type="submit"
-            disabled={createMutation.isLoading}
-            className="btn-success"
+            disabled={createMutation.isPending}
+            className="btn-success flex items-center gap-2"
           >
-            {createMutation.isLoading ? 'Création...' : 'Créer le Client'}
+            {createMutation.isPending && <ButtonSpinner />}
+            {createMutation.isPending ? 'Création...' : 'Créer le Client'}
           </button>
         </div>
       </form>
