@@ -92,18 +92,8 @@ dcl-pr CONTSRV_ListContracts int(10);
     pFilter likeds(ContractFilter_t) const;
 end-pr;
 
-dcl-pr CONTSRV_ListContractsJson int(10);
-    pStatusFilter   char(3) const;
-    pJsonData       varchar(32000);
-end-pr;
-
 dcl-pr CONTSRV_GetCustomerContracts int(10);
     pCustId packed(10:0) const;
-end-pr;
-
-dcl-pr CONTSRV_GetCustomerContractsJson int(10);
-    pCustId         packed(10:0) const;
-    pJsonData       varchar(32000);
 end-pr;
 
 dcl-pr CONTSRV_GetBrokerContracts int(10);
@@ -136,9 +126,4 @@ end-pr;
 
 dcl-pr CONTSRV_GenerateContractRef char(20);
     pBrokerId packed(10:0) const;
-end-pr;
-
-dcl-pr CONTSRV_CountStats;
-    oTotal          packed(10:0);
-    oActive         packed(10:0);
 end-pr;

@@ -28,8 +28,6 @@ dcl-proc CUSTSRV_CreateCustomer export;
     end-pi;
 
     dcl-s newCustId packed(10:0) inz(0);
-    dcl-s rowCount int(10) inz(0);
-    dcl-s saveSqlcode int(10) inz(0);
     dcl-ds customer likeds(Customer_t) inz;
 
     // Initialization
@@ -46,8 +44,6 @@ dcl-proc CUSTSRV_CreateCustomer export;
         customer.status = 'ACT';
 
         // Business logic - INSERT using DS
-        // Use NULLIF for optional fields to avoid CHECK constraint violations
-        // (char fields initialized to blanks, but constraints expect NULL or valid values)
         exec sql
             INSERT INTO MRS1.CUSTOMER (
                 CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
@@ -55,49 +51,21 @@ dcl-proc CUSTSRV_CreateCustomer export;
                 NACE_CODE, STREET, HOUSE_NBR, BOX_NBR, POSTAL_CODE,
                 CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE, STATUS
             ) VALUES (
-                :customer.custType,
-                NULLIF(RTRIM(:customer.firstName), ''),
-                NULLIF(RTRIM(:customer.lastName), ''),
-                NULLIF(RTRIM(:customer.nationalId), ''),
-                NULLIF(RTRIM(:customer.civilStatus), ''),
-                :customer.birthDate,
-                NULLIF(RTRIM(:customer.companyName), ''),
-                NULLIF(RTRIM(:customer.vatNumber), ''),
-                NULLIF(RTRIM(:customer.naceCode), ''),
-                NULLIF(RTRIM(:customer.street), ''),
-                NULLIF(RTRIM(:customer.houseNbr), ''),
-                NULLIF(RTRIM(:customer.boxNbr), ''),
-                NULLIF(RTRIM(:customer.postalCode), ''),
-                NULLIF(RTRIM(:customer.city), ''),
-                NULLIF(RTRIM(:customer.countryCode), ''),
-                NULLIF(RTRIM(:customer.phone), ''),
-                NULLIF(RTRIM(:customer.email), ''),
-                :customer.language,
+                :customer.custType, :customer.firstName, :customer.lastName,
+                :customer.nationalId, :customer.civilStatus, :customer.birthDate,
+                :customer.companyName, :customer.vatNumber, :customer.naceCode,
+                :customer.street, :customer.houseNbr, :customer.boxNbr,
+                :customer.postalCode, :customer.city, :customer.countryCode,
+                :customer.phone, :customer.email, :customer.language,
                 :customer.status
             );
 
-        // Save SQLCODE for debugging
-        saveSqlcode = sqlcode;
-
-        // Get row count to verify INSERT actually worked
-        exec sql GET DIAGNOSTICS :rowCount = ROW_COUNT;
-
-        // Only treat as success if we actually inserted a row
-        // SQLCODE 8013 is a warning but INSERT may have failed
-        if rowCount > 0;
+        // Treat SQLCODE 8013 (PUB400 licensing) as success
+        if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             exec sql
                 SELECT IDENTITY_VAL_LOCAL() INTO :newCustId FROM SYSIBM.SYSDUMMY1;
-
-            // Verify the ID is valid
-            if newCustId <= 0;
-                ERRUTIL_addErrorCode('DB004');
-                ERRUTIL_addErrorMessage('INSERT ok but IDENTITY_VAL_LOCAL failed, sqlcode=' +
-                                        %char(saveSqlcode));
-                newCustId = 0;
-            endif;
         else;
             ERRUTIL_addErrorCode('DB004');
-            ERRUTIL_addErrorMessage('INSERT failed: 0 rows, sqlcode=' + %char(saveSqlcode));
         endif;
 
     on-error;
@@ -131,52 +99,6 @@ dcl-proc CUSTSRV_GetCustomer export;
             INTO :customer
             FROM MRS1.CUSTOMER
             WHERE CUST_ID = :pCustId;
-
-        // Treat SQLCODE 8013 (PUB400 licensing) as success
-        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
-            clear customer;
-            if sqlcode = 100;
-                ERRUTIL_addErrorCode('DB001');
-            else;
-                ERRUTIL_addErrorCode('DB004');
-            endif;
-        endif;
-
-    on-error;
-        clear customer;
-        ERRUTIL_addExecutionError();
-    endmon;
-
-    return customer;
-end-proc;
-
-//==============================================================
-// GetCustomerByEmail : Retrieve customer by email
-//
-//  Returns: Customer DS (empty on error)
-//
-//==============================================================
-dcl-proc CUSTSRV_GetCustomerByEmail export;
-    dcl-pi *n likeds(Customer_t);
-        pEmail varchar(100) const;
-    end-pi;
-
-    dcl-ds customer likeds(Customer_t) inz;
-    dcl-s emailFilter varchar(100);
-
-    monitor;
-        emailFilter = %trim(pEmail);
-
-        // Business logic - Select directly into structure
-        exec sql
-            SELECT CUST_ID, CUST_TYPE, FIRST_NAME, LAST_NAME, NATIONAL_ID,
-                   CIVIL_STATUS, BIRTH_DATE, COMPANY_NAME, VAT_NUMBER,
-                   NACE_CODE, STREET, HOUSE_NBR, BOX_NBR, POSTAL_CODE,
-                   CITY, COUNTRY_CODE, PHONE, EMAIL, LANGUAGE,
-                   STATUS, CREATED_AT, UPDATED_AT
-            INTO :customer
-            FROM MRS1.CUSTOMER
-            WHERE EMAIL = :emailFilter;
 
         // Treat SQLCODE 8013 (PUB400 licensing) as success
         if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
@@ -378,107 +300,6 @@ dcl-proc CUSTSRV_ListCustomers export;
 end-proc;
 
 //==============================================================
-// ListCustomersJson : List customers and return JSON array
-//
-//  Returns: Result count
-//
-//==============================================================
-dcl-proc CUSTSRV_ListCustomersJson export;
-    dcl-pi *n int(10);
-        pStatusFilter   char(3) const;
-        pJsonData       varchar(32000);
-    end-pi;
-
-    dcl-s jsonRow varchar(800);
-    dcl-s custId packed(10:0);
-    dcl-s custType char(3);
-    dcl-s firstName varchar(50);
-    dcl-s lastName varchar(50);
-    dcl-s nationalId char(15);
-    dcl-s companyName varchar(100);
-    dcl-s street varchar(30);
-    dcl-s postalCode char(7);
-    dcl-s city varchar(24);
-    dcl-s phone varchar(20);
-    dcl-s email varchar(100);
-    dcl-s language char(2);
-    dcl-s custStatus char(3);
-    dcl-s resultCount int(10) inz(0);
-    dcl-s firstRow ind inz(*on);
-    dcl-s statusFilter char(3);
-
-    exec sql
-        DECLARE C_LISTCUSTOMERS CURSOR FOR
-        SELECT CUST_ID, CUST_TYPE,
-               COALESCE(FIRST_NAME, ''), COALESCE(LAST_NAME, ''),
-               COALESCE(NATIONAL_ID, ''), COALESCE(COMPANY_NAME, ''),
-               COALESCE(STREET, ''), COALESCE(POSTAL_CODE, ''),
-               COALESCE(CITY, ''), COALESCE(PHONE, ''),
-               COALESCE(EMAIL, ''), COALESCE(LANGUAGE, ''), STATUS
-        FROM MRS1.CUSTOMER
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
-        ORDER BY LAST_NAME, FIRST_NAME;
-
-    monitor;
-        statusFilter = %trim(pStatusFilter);
-        pJsonData = '[';
-
-        exec sql OPEN C_LISTCUSTOMERS;
-
-        // SQLCODE 8013 = PUB400 licensing - ignore and return empty
-        if sqlcode <> 0 and sqlcode <> 8013 and sqlcode <> -8013;
-            pJsonData = '[]';
-            return 0;
-        endif;
-
-        exec sql
-            FETCH C_LISTCUSTOMERS INTO :custId, :custType, :firstName, :lastName,
-                :nationalId, :companyName, :street, :postalCode, :city,
-                :phone, :email, :language, :custStatus;
-
-        // Also handle SQLCODE 8013 (PUB400 licensing)
-        dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
-            if not firstRow;
-                pJsonData = %trim(pJsonData) + ',';
-            endif;
-            firstRow = *off;
-
-            jsonRow = '{"CUST_ID":' + %char(custId) +
-                ',"CUST_TYPE":"' + %trim(custType) +
-                '","FIRST_NAME":"' + %trim(firstName) +
-                '","LAST_NAME":"' + %trim(lastName) +
-                '","NATIONAL_ID":"' + %trim(nationalId) +
-                '","COMPANY_NAME":"' + %trim(companyName) +
-                '","STREET":"' + %trim(street) +
-                '","POSTAL_CODE":"' + %trim(postalCode) +
-                '","CITY":"' + %trim(city) +
-                '","PHONE":"' + %trim(phone) +
-                '","EMAIL":"' + %trim(email) +
-                '","LANGUAGE":"' + %trim(language) +
-                '","STATUS":"' + %trim(custStatus) + '"}';
-
-            pJsonData = %trim(pJsonData) + jsonRow;
-            resultCount += 1;
-
-            exec sql
-                FETCH C_LISTCUSTOMERS INTO :custId, :custType, :firstName, :lastName,
-                    :nationalId, :companyName, :street, :postalCode, :city,
-                    :phone, :email, :language, :custStatus;
-        enddo;
-
-        exec sql CLOSE C_LISTCUSTOMERS;
-
-        pJsonData = %trim(pJsonData) + ']';
-
-    on-error;
-        pJsonData = '[]';
-        ERRUTIL_addExecutionError();
-    endmon;
-
-    return resultCount;
-end-proc;
-
-//==============================================================
 // IsValidCustomer : Validate customer data
 //
 //  Returns: Validation indicator
@@ -544,35 +365,29 @@ end-proc;
 //
 //  Returns: Valid indicator
 //
-//  NOTE: Due to CCSID conversion issues between Node.js (UTF-8)
-//  and IBM i (EBCDIC), the @ character may be corrupted during
-//  iToolkit transmission. Full email validation is done in Node.js.
-//  Here we only do minimal validation (check for dot in domain).
 //==============================================================
 dcl-proc CUSTSRV_IsValidEmail export;
     dcl-pi *n ind;
         pEmail varchar(100) const;
     end-pi;
 
+    dcl-s atPos int(10);
     dcl-s dotPos int(10);
-    dcl-s emailLen int(10);
 
-    emailLen = %len(%trim(pEmail));
-
-    // Minimal validation - email must have at least a.b format
-    // Full validation (including @) is done in Node.js layer
-    // to avoid CCSID/EBCDIC conversion issues with @ character
-    if emailLen < 3;
+    // Validation - Basic email format check
+    atPos = %scan('@': pEmail);
+    if atPos < 2;
         ERRUTIL_addErrorCode('VAL001');
-        ERRUTIL_addErrorMessage('email: too short (min 3 chars)');
+        ERRUTIL_addErrorMessage('email: missing or invalid @ position in: ' +
+                                %trim(pEmail));
         return *off;
     endif;
 
-    // Check for at least one dot (domain separator)
-    dotPos = %scan('.': pEmail);
-    if dotPos = 0 or dotPos < 2 or dotPos >= emailLen;
+    dotPos = %scan('.': pEmail: atPos);
+    if dotPos = 0 or dotPos <= atPos + 1;
         ERRUTIL_addErrorCode('VAL001');
-        ERRUTIL_addErrorMessage('email: missing valid domain dot');
+        ERRUTIL_addErrorMessage('email: missing domain dot after @ in: ' +
+                                %trim(pEmail));
         return *off;
     endif;
 
@@ -681,30 +496,4 @@ dcl-proc CUSTSRV_IsValidPostalCode export;
     endfor;
 
     return *on;
-end-proc;
-
-//==============================================================
-// CountStats : Get customer counts for dashboard
-//
-//  Returns total and active customer counts
-//
-//==============================================================
-dcl-proc CUSTSRV_CountStats export;
-    dcl-pi *n;
-        oTotal          packed(10:0);
-        oActive         packed(10:0);
-    end-pi;
-
-    oTotal = 0;
-    oActive = 0;
-
-    monitor;
-        exec sql
-            SELECT COUNT(*), SUM(CASE WHEN STATUS = 'ACT' THEN 1 ELSE 0 END)
-            INTO :oTotal, :oActive
-            FROM MRS1.CUSTOMER;
-
-    on-error;
-        ERRUTIL_addExecutionError();
-    endmon;
 end-proc;

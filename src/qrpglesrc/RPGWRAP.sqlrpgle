@@ -96,15 +96,17 @@ dcl-proc WRAP_ListBrokers export;
         oJsonData       varchar(32000);
         oCount          packed(10:0);
         oSuccess        char(1);
+        oSqlCode        int(10);
     end-pi;
 
     monitor;
-        oCount = BROKRSRV_ListBrokersJson(pStatus: oJsonData);
+        oCount = BROKRSRV_ListBrokersJson(pStatus: oJsonData: oSqlCode);
         oSuccess = 'Y';
     on-error;
         oJsonData = '[]';
         oCount = 0;
         oSuccess = 'N';
+        oSqlCode = -999;
     endmon;
 end-proc;
 

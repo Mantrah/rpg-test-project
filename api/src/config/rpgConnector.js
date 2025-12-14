@@ -204,14 +204,18 @@ const listBrokers = async (status = '') => {
     { name: 'pStatus', type: '3a', value: status || '', io: 'in' },
     { name: 'oJsonData', type: '32000a', value: '', io: 'out', varying: 2 },
     { name: 'oCount', type: '10p0', value: 0, io: 'out' },
-    { name: 'oSuccess', type: '1a', value: '', io: 'out' }
+    { name: 'oSuccess', type: '1a', value: '', io: 'out' },
+    { name: 'oSqlCode', type: '10i0', value: 0, io: 'out' }
   ];
 
   try {
     const result = await callRpg('WRAP_LISTBROKERS', params);
 
+    // Log SQLCODE for debugging
+    console.log('[RPG] listBrokers SQLCODE:', result.oSqlCode);
+
     if (result.oSuccess !== 'Y') {
-      console.warn('[RPG] listBrokers returned unsuccessful, returning empty array');
+      console.warn('[RPG] listBrokers returned unsuccessful, SQLCODE:', result.oSqlCode);
       return [];
     }
 

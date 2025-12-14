@@ -147,9 +147,24 @@ system "SBMJOB CMD(QSH CMD('/home/MRS/DAS/start-api.sh')) JOB(DASAPI90) USER(MRS
 - Config API dans `ui/.env.local` : `VITE_API_BASE_URL=http://localhost:8090/api`
 
 **Déploiement RPG :**
-- Upload fichiers via FTP (scripts ftp-*.txt)
-- Compilation via FTP RCMD (quote RCMD CRTSQLRPGI...)
+- Upload fichiers via FTP vers IFS (`/home/MRS/DAS/src/qrpglesrc/`)
+- **TOUJOURS** copier vers QSYS avec CPYFRMSTMF avant compilation
+- **JAMAIS compiler depuis SRCSTMF (IFS)** - toujours utiliser SRCFILE (QSYS)
 - Service program DASSRV dans MRS1
+
+**Processus de compilation obligatoire :**
+```
+1. put FICHIER.sqlrpgle                    # Upload vers IFS
+2. quote RCMD CPYFRMSTMF ... TOMBR(...)    # Copier IFS → QSYS
+3. quote RCMD CRTSQLRPGI ... SRCFILE(...)  # Compiler depuis SRCFILE
+```
+
+**Exemple complet :**
+```
+put BROKRSRV.sqlrpgle
+quote RCMD CPYFRMSTMF FROMSTMF('/home/MRS/DAS/src/qrpglesrc/BROKRSRV.sqlrpgle') TOMBR('/QSYS.LIB/MRS1.LIB/QRPGLESRC.FILE/BROKRSRV.MBR') MBROPT(*REPLACE)
+quote RCMD CRTSQLRPGI OBJ(MRS1/BROKRSRV) SRCFILE(MRS1/QRPGLESRC) SRCMBR(BROKRSRV) OBJTYPE(*MODULE) ...
+```
 
 **Headers (copybooks) :**
 Les `/copy MRS1/QRPGLESRC,xxx_H` référencent le source physical file, pas l'IFS.

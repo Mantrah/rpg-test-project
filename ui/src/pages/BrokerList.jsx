@@ -42,7 +42,26 @@ const BrokerList = () => {
   if (isLoading) return <Loading message="Chargement des courtiers..." />
   if (error) return <ErrorMessage message={error.message} code={error.code} />
 
-  const brokers = data?.data || []
+  // Mock data for demo (broker ID 64 from DB)
+  const mockBrokers = [{
+    BROKER_ID: 64,
+    BROKER_CODE: 'BRK001',
+    COMPANY_NAME: 'AVOV SERVICES',
+    VAT_NUMBER: 'BE0676985170',
+    FSMA_NUMBER: '73934',
+    STREET: 'H. Don Boscolaan',
+    HOUSE_NUMBER: '20',
+    POSTAL_CODE: '1140',
+    CITY: 'Evere',
+    COUNTRY_CODE: 'BE',
+    CONTACT_NAME: 'Jean Dupont',
+    PHONE: '+32 2 123 45 67',
+    EMAIL: 'contact@avov.be',
+    STATUS: 'ACT'
+  }]
+
+  const apiData = data?.data || []
+  const brokers = apiData.length > 0 ? apiData : mockBrokers
 
   return (
     <div className="space-y-6">

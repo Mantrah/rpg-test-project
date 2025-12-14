@@ -42,7 +42,7 @@ dcl-proc BROKRSRV_CreateBroker export;
 
         // Business logic
         exec sql
-            INSERT INTO BROKER (
+            INSERT INTO MRS1.BROKER (
                 BROKER_CODE, COMPANY_NAME, VAT_NUMBER, FSMA_NUMBER,
                 STREET, HOUSE_NBR, BOX_NBR, POSTAL_CODE, CITY,
                 COUNTRY_CODE, PHONE, EMAIL, CONTACT_NAME, STATUS
@@ -58,7 +58,7 @@ dcl-proc BROKRSRV_CreateBroker export;
         if sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;
             // Get the new broker ID using MAX (more reliable than IDENTITY_VAL_LOCAL)
             exec sql
-                SELECT MAX(BROKER_ID) INTO :newBrokerId FROM BROKER;
+                SELECT MAX(BROKER_ID) INTO :newBrokerId FROM MRS1.BROKER;
         else;
             ERRUTIL_addErrorCode('DB004');
         endif;
@@ -91,7 +91,7 @@ dcl-proc BROKRSRV_GetBroker export;
                    CITY, COUNTRY_CODE, PHONE, EMAIL, CONTACT_NAME,
                    STATUS, CREATED_AT, UPDATED_AT
             INTO :broker
-            FROM BROKER
+            FROM MRS1.BROKER
             WHERE BROKER_ID = :pBrokerId;
 
         // Treat SQLCODE 8013 (PUB400 licensing) as success
@@ -133,7 +133,7 @@ dcl-proc BROKRSRV_GetBrokerByCode export;
                    CITY, COUNTRY_CODE, PHONE, EMAIL, CONTACT_NAME,
                    STATUS, CREATED_AT, UPDATED_AT
             INTO :broker
-            FROM BROKER
+            FROM MRS1.BROKER
             WHERE BROKER_CODE = :pBrokerCode;
 
         // Treat SQLCODE 8013 (PUB400 licensing) as success
@@ -178,7 +178,7 @@ dcl-proc BROKRSRV_UpdateBroker export;
 
         // Business logic
         exec sql
-            UPDATE BROKER SET
+            UPDATE MRS1.BROKER SET
                 BROKER_CODE = :pBroker.brokerCode,
                 COMPANY_NAME = :pBroker.companyName,
                 VAT_NUMBER = :pBroker.vatNumber,
@@ -225,7 +225,7 @@ dcl-proc BROKRSRV_DeleteBroker export;
     monitor;
         // Business logic - soft delete
         exec sql
-            UPDATE BROKER SET
+            UPDATE MRS1.BROKER SET
                 STATUS = 'INA',
                 UPDATED_AT = CURRENT_TIMESTAMP
             WHERE BROKER_ID = :pBrokerId;
@@ -260,7 +260,7 @@ dcl-proc BROKRSRV_ListBrokers export;
         // Business logic
         exec sql
             SELECT COUNT(*) INTO :resultCount
-            FROM BROKER
+            FROM MRS1.BROKER
             WHERE (:pFilter.brokerCode = '' OR BROKER_CODE = :pFilter.brokerCode)
               AND (:pFilter.companyName = '' OR COMPANY_NAME LIKE :pFilter.companyName || '%')
               AND (:pFilter.city = '' OR CITY = :pFilter.city)
@@ -342,6 +342,7 @@ dcl-proc BROKRSRV_ListBrokersJson export;
     dcl-pi *n int(10);
         pStatusFilter   char(3) const;
         pJsonData       varchar(32000);
+        pSqlCode        int(10);
     end-pi;
 
     dcl-s jsonRow varchar(500);
@@ -370,9 +371,12 @@ dcl-proc BROKRSRV_ListBrokersJson export;
                COALESCE(POSTAL_CODE, ''), COALESCE(CITY, ''),
                COALESCE(PHONE, ''), COALESCE(EMAIL, ''),
                COALESCE(CONTACT_NAME, ''), STATUS
-        FROM BROKER
-        WHERE :statusFilter = '' OR STATUS = :statusFilter
+        FROM MRS1.BROKER
+        WHERE TRIM(:statusFilter) = '' OR STATUS = TRIM(:statusFilter)
         ORDER BY COMPANY_NAME;
+
+    // SQLCODE after DECLARE (should be 0)
+    pSqlCode = sqlcode;
 
     monitor;
         statusFilter = %trim(pStatusFilter);
@@ -380,10 +384,16 @@ dcl-proc BROKRSRV_ListBrokersJson export;
 
         exec sql OPEN C_LISTBROKERS;
 
+        // SQLCODE after OPEN
+        pSqlCode = sqlcode;
+
         exec sql
             FETCH C_LISTBROKERS INTO :brokerId, :brokerCode, :companyName,
                 :vatNumber, :fsmaNumber, :street, :houseNbr,
                 :postalCode, :city, :phone, :email, :contactName, :brokerStatus;
+
+        // SQLCODE after first FETCH
+        pSqlCode = sqlcode;
 
         // Also handle SQLCODE 8013 (PUB400 licensing)
         dow sqlcode = 0 or sqlcode = 8013 or sqlcode = -8013;

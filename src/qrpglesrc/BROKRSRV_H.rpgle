@@ -84,6 +84,7 @@ end-pr;
 dcl-pr BROKRSRV_ListBrokersJson int(10);
     pStatusFilter   char(3) const;
     pJsonData       varchar(32000);
+    pSqlCode        int(10);
 end-pr;
 
 dcl-pr BROKRSRV_CountStats;
